@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reconciliation Playground</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e; --line2:#1c2740;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b; --pend:#f5b942; --creat:#4cc9f0;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  /* fluid type scale: ~12.3px @800w → 16px @≥1750w, floor 10.5px */
+  html{font-size:clamp(10.5px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  header h1 .k8s{color:var(--accent)}
+  #loop{display:flex;align-items:center;gap:6px;margin-left:auto;font-family:var(--mono);font-size:.84rem;color:var(--faint)}
+  #loop .ring{width:1.1rem;height:1.1rem;border-radius:50%;border:2px solid var(--line);border-top-color:var(--accent);animation:spin 1s linear infinite}
+  #loop .ph{padding:2px 7px;border-radius:9px;border:1px solid transparent;transition:all .25s}
+  #loop .ph.on{color:var(--accent);border-color:var(--accent);background:rgba(76,201,240,.08)}
+  #loop .sep{color:var(--line)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;min-height:24px}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  /* ---------- challenge banner ---------- */
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700;
+    background:transparent;padding:0;cursor:pointer}
+  #challenge .dot:hover{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.96rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.88rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+  #challenge.success .txt{white-space:normal;line-height:1.3}
+
+  /* ---------- main grid ---------- */
+  #main{flex:1 1 auto;display:grid;grid-template-columns:clamp(236px,20.5rem,340px) 1fr;gap:6px;min-height:0}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;min-height:0}
+  .panel h2{font-size:.76rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+
+  /* deployment card — read-only status, deliberately non-interactive */
+  #left{display:flex;flex-direction:column;gap:6px;min-height:0}
+  #deploy,#deploy *{cursor:default}
+  #deploy{flex:0 0 auto}
+  #deploy h2 span{color:var(--accent);text-transform:none;letter-spacing:0;font-family:var(--mono);font-size:.88rem}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-bottom:1px dashed var(--line2)}
+  .row:last-child{border-bottom:none}
+  .row>span:last-child{display:flex;align-items:center;white-space:nowrap}
+  .row .lbl{color:var(--dim);font-family:var(--mono);font-size:.84rem}
+  .row .val{font-family:var(--mono);font-size:.92rem;font-weight:600;padding:1px 7px;border-radius:5px;transition:background .3s}
+  .row .val.flash{animation:flash 1.1s ease-out}
+  @keyframes flash{0%{background:rgba(245,185,66,.55)}100%{background:transparent}}
+  .row .val.flash-ok{animation:flashok 1.1s ease-out}
+  @keyframes flashok{0%{background:rgba(61,220,151,.5)}100%{background:transparent}}
+  #vAvail.true{color:var(--ok)} #vAvail.false{color:var(--bad)}
+  .pill{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.4px;border-radius:8px;
+    padding:1px 6px;margin-left:6px;opacity:0;transition:opacity .3s;vertical-align:1px}
+  .pill.show{opacity:1}
+  .pill.ok{background:rgba(61,220,151,.16);color:var(--ok);border:1px solid rgba(61,220,151,.4)}
+  .pill.lag{background:rgba(245,185,66,.14);color:var(--warn);border:1px solid rgba(245,185,66,.4)}
+
+  /* controls */
+  #controls{flex:1 1 auto;display:flex;flex-direction:column;gap:6px;justify-content:flex-start}
+  .ctl{display:flex;align-items:center;gap:8px}
+  .ctl .clbl{color:var(--dim);font-size:.88rem;flex:1}
+  .stepper{display:flex;align-items:center;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:1px}
+  .stepper button{width:2.5rem;height:2rem;background:none;border:none;color:var(--accent);font-size:1.3rem;
+    cursor:pointer;border-radius:6px;line-height:1}
+  .stepper button:hover{background:rgba(76,201,240,.1)}
+  .stepper button:disabled{color:var(--line);cursor:default;background:none}
+  .stepper .num{font-family:var(--mono);font-size:1.12rem;font-weight:700;width:1.9rem;text-align:center}
+  .btn{width:100%;min-height:2.5rem;border-radius:8px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--txt);font-size:.96rem;font-weight:600;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;gap:7px;transition:border-color .2s,background .2s}
+  .btn .ic{font-size:1.05rem}
+  .btn:hover{border-color:var(--faint)}
+  .btn:disabled{opacity:.45;cursor:default}
+  #killBtn:hover:not(:disabled){border-color:var(--bad);background:rgba(255,107,107,.07)}
+  #cordonBtn.on{border-color:var(--warn);background:rgba(245,185,66,.1);color:var(--warn)}
+
+  /* cluster panel */
+  #cluster{display:flex;flex-direction:column;min-height:0}
+  #nodes{flex:1;display:grid;grid-template-columns:clamp(92px,8rem,150px) 1fr;grid-template-rows:1fr auto;gap:6px;min-height:0}
+  .node{border:1px solid var(--line);border-radius:9px;background:var(--panel2);padding:7px 8px;min-height:0;position:relative}
+  .node .nname{font-family:var(--mono);font-size:.84rem;color:var(--dim);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .node .nname b{color:var(--txt);font-weight:600}
+  .badge{font-size:.68rem;font-weight:700;letter-spacing:.3px;padding:1px 5px;border-radius:6px;white-space:nowrap}
+  .badge.taint{background:rgba(123,108,246,.15);color:#a89cf8;border:1px solid rgba(123,108,246,.45)}
+  .badge.cordon{background:rgba(245,185,66,.14);color:var(--warn);border:1px solid rgba(245,185,66,.5)}
+  #cpNode .cpbits{margin-top:6px;display:flex;flex-direction:column;gap:4px}
+  /* control-plane chips: read-only status chips with hover tooltip; glow when the component acts */
+  .cpbit{font-family:var(--mono);font-size:.72rem;color:var(--faint);border:1px dashed var(--line);
+    border-radius:5px;padding:2px 5px;text-align:center;position:relative;cursor:help}
+  .cpbit.act{animation:cpact .9s ease-out}
+  @keyframes cpact{0%{border-color:var(--accent);color:var(--accent);background:rgba(76,201,240,.14);
+    box-shadow:0 0 9px rgba(76,201,240,.6)}100%{box-shadow:0 0 0 rgba(76,201,240,0)}}
+  .cpbit:hover::after,.cpbit:active::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;
+    transform:translateY(-50%);z-index:30;width:26ch;background:#0a0f1c;border:1px solid var(--line);
+    border-radius:7px;padding:6px 9px;color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.82rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+  /* worker node: whole panel toggles cordon */
+  #worker{cursor:pointer;transition:border-color .2s,box-shadow .2s}
+  #worker:hover{border-color:var(--warn);box-shadow:0 0 0 1px rgba(245,185,66,.35)}
+  #worker.cordoned{border-color:rgba(245,185,66,.55)}
+  .nhint{margin-left:auto;font-size:.72rem;color:var(--warn);opacity:0;transition:opacity .2s;white-space:nowrap;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  #worker:hover .nhint{opacity:1}
+  #podArea{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start;overflow:hidden}
+  #tray{grid-column:1/-1;border:1.5px dashed var(--line);border-radius:9px;padding:5px 8px;
+    min-height:3rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap;transition:border-color .3s}
+  #tray .tlbl{font-size:.76rem;color:var(--faint);letter-spacing:.5px;text-transform:uppercase;font-weight:700;margin-right:2px}
+  #tray.hot{border-color:var(--warn)}
+  #tray.hot .tlbl{color:var(--warn)}
+  #trayEmpty{font-size:.8rem;color:var(--faint)}
+
+  /* pod chips — Running chips are click-to-kill */
+  .pod{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.8rem;
+    border-radius:7px;padding:4px 8px;border:1px solid var(--line);background:#0e1526;
+    animation:pop .35s cubic-bezier(.2,1.6,.4,1);transition:opacity .5s,transform .5s,border-color .4s}
+  @keyframes pop{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
+  .pod.Running{cursor:pointer}
+  .pod.Running::after{content:'✕';color:var(--bad);font-size:.85em;opacity:0;transition:opacity .15s}
+  .pod.Running:hover{border-color:var(--bad);background:rgba(255,107,107,.08)}
+  .pod.Running:hover::after{opacity:1}
+  .pod .dotp{width:.55rem;height:.55rem;border-radius:50%;flex:0 0 auto}
+  .pod.Pending{border-color:rgba(245,185,66,.5)} .pod.Pending .dotp{background:var(--pend);animation:blink 1s infinite}
+  .pod.ContainerCreating{border-color:rgba(76,201,240,.5)} .pod.ContainerCreating .dotp{background:var(--creat);animation:blink .6s infinite}
+  .pod.Running{border-color:rgba(61,220,151,.55)} .pod.Running .dotp{background:var(--ok)}
+  .pod.Terminating{border-color:rgba(255,107,107,.6);opacity:.45;transform:scale(.92)} .pod.Terminating .dotp{background:var(--bad)}
+  .pod .ph{color:var(--faint);font-size:.68rem}
+  .pod.Pending .ph{color:var(--pend)} .pod.ContainerCreating .ph{color:var(--creat)}
+  .pod.Running .ph{color:var(--ok)} .pod.Terminating .ph{color:var(--bad)}
+  @keyframes blink{50%{opacity:.35}}
+
+  /* event log — read-only stream, deliberately non-interactive */
+  #events{flex:0 0 clamp(104px,9rem,150px);display:flex;flex-direction:column;min-height:0}
+  #events,#events *{cursor:default}
+  #evList{flex:1;overflow-y:auto;font-family:var(--mono);font-size:.8rem;line-height:1.7;scrollbar-width:thin}
+  .ev{display:flex;gap:8px;white-space:nowrap;overflow:hidden}
+  .ev .et{color:var(--faint);flex:0 0 2.6rem}
+  .ev .er{flex:0 0 10.2rem;overflow:hidden;text-overflow:ellipsis;color:var(--ok)}
+  .ev.warn .er{color:var(--warn)}
+  .ev .eo{flex:0 0 13.4rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+  .ev .em{flex:1;color:var(--txt);opacity:.85;overflow:hidden;text-overflow:ellipsis}
+  .ev.info .er{color:var(--accent2)}
+  .ev.new{animation:evin .4s ease-out}
+  @keyframes evin{0%{background:rgba(76,201,240,.12)}100%{background:transparent}}
+
+  /* narrow fallback: stack + allow scroll rather than clip */
+  @media (max-width:620px){
+    body{overflow:auto}
+    #main{grid-template-columns:1fr}
+    #app{height:auto;min-height:100%}
+    .ev .eo{flex-basis:9rem}.ev .er{flex-basis:8.5rem}
+    .cpbit:hover::after,.cpbit:active::after{left:0;top:calc(100% + 6px);transform:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *,#loop .ring{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1><span class="k8s">⎈</span> Reconciliation Playground</h1>
+    <div id="loop" title="The controller's level-triggered loop: every second it re-reads current state and closes any gap.">
+      <div class="ring"></div>
+      <span class="ph" id="phObserve">observe</span><span class="sep">→</span>
+      <span class="ph" id="phDiff">diff</span><span class="sep">→</span>
+      <span class="ph" id="phAct">act</span>
+    </div>
+    <button id="reset" title="Reset the simulator">↺ Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Try this</span>
+    <span class="steps">
+      <button type="button" class="dot" id="d1" role="button" tabindex="0" data-step="1" aria-label="Show Step 1 instructions">1</button>
+      <button type="button" class="dot" id="d2" role="button" tabindex="0" data-step="2" aria-label="Show Step 2 instructions">2</button>
+      <button type="button" class="dot" id="d3" role="button" tabindex="0" data-step="3" aria-label="Show Step 3 instructions">3</button>
+    </span>
+    <span class="txt" id="chTxt"></span>
+  </div>
+
+  <div id="main">
+    <div id="left">
+      <div class="panel" id="deploy">
+        <h2>Deployment <span>nimbus-gateway</span></h2>
+        <div class="row"><span class="lbl">spec.replicas</span><span class="val" id="vSpec">3</span></div>
+        <div class="row"><span class="lbl">metadata.generation</span>
+          <span><span class="val" id="vGen">1</span><span class="pill ok" id="genPill">unchanged ✓</span></span></div>
+        <div class="row"><span class="lbl">status.observedGeneration</span>
+          <span><span class="val" id="vObs">1</span><span class="pill lag" id="lagPill">behind</span></span></div>
+        <div class="row"><span class="lbl">status.readyReplicas</span><span class="val" id="vReady">3</span></div>
+        <div class="row"><span class="lbl">Available</span><span class="val true" id="vAvail">True</span></div>
+      </div>
+      <div class="panel" id="controls">
+        <h2>Your disturbances</h2>
+        <div class="ctl">
+          <span class="clbl">spec.replicas (1–8)</span>
+          <div class="stepper">
+            <button id="repMinus" aria-label="decrease replicas">−</button>
+            <span class="num" id="repNum">3</span>
+            <button id="repPlus" aria-label="increase replicas">+</button>
+          </div>
+        </div>
+        <button class="btn" id="killBtn"><span class="ic">✕</span> Kill a random Pod</button>
+        <button class="btn" id="cordonBtn"><span class="ic">⏸</span> Cordon worker-1</button>
+      </div>
+    </div>
+
+    <div class="panel" id="cluster">
+      <h2>Cluster · nimbus namespace</h2>
+      <div id="nodes">
+        <div class="node" id="cpNode">
+          <div class="nname"><b>cp-1</b><span class="badge taint" title="node-role.kubernetes.io/control-plane:NoSchedule">NoSchedule</span></div>
+          <div class="cpbits">
+            <div class="cpbit" id="cpApi" data-tip="The cluster's front door. Every read and write — from kubectl, controllers, the scheduler — goes through the API server. Glows on each request it serves.">api-server</div>
+            <div class="cpbit" id="cpEtcd" data-tip="The cluster's database. Every persisted object — spec and status — lands here. Glows on each write.">etcd</div>
+            <div class="cpbit" id="cpCtrl" data-tip="The reconciliation loops. Deployment &amp; ReplicaSet controllers compare desired vs actual and create or delete Pods to close the gap. Glows when they act.">controllers</div>
+            <div class="cpbit" id="cpSched" data-tip="Assigns Pending Pods to nodes. Glows when it binds a Pod — or reports FailedScheduling when no node fits.">scheduler</div>
+          </div>
+        </div>
+        <div class="node" id="worker" title="worker-1 — click to cordon">
+          <div class="nname"><b>worker-1</b><span class="badge cordon" id="cordonBadge" style="display:none">SchedulingDisabled</span><span class="nhint" id="nodeHint">⏸ click to cordon</span></div>
+          <div id="podArea"></div>
+        </div>
+        <div id="tray"><span class="tlbl">Unscheduled</span><span id="trayEmpty">— none, scheduler is idle</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="events">
+    <h2>Events <span style="letter-spacing:0;text-transform:none;color:var(--line)">— kubectl get events -w</span></h2>
+    <div id="evList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id)};
+
+  /* ------------------------------------------------------------------ state */
+  var RS='nimbus-gateway-7d4b8c';
+  var S={
+    spec:3, generation:1, observedGeneration:1, lastReconciledSpec:3,
+    cordoned:false, pods:[], podSeq:0, t0:Date.now()
+  };
+  var CH={step:1, view:1, done:[false,false,false],
+          s1scaled:false, s2killGen:-1, s3kill:false, s3sawFS:false};
+
+  function suffix(){var a='bcdfghjklmnpqrstvwxz0123456789',s='';for(var i=0;i<5;i++)s+=a[Math.floor(Math.random()*a.length)];return s}
+  function newPod(phase,node){
+    S.podSeq++;
+    return {id:'p'+S.podSeq, name:RS+'-'+suffix(), phase:phase||'Pending',
+            node:node||null, born:Date.now(), fsAt:0};
+  }
+  function alive(){return S.pods.filter(function(p){return p.phase!=='Terminating'})}
+  function running(){return S.pods.filter(function(p){return p.phase==='Running'})}
+
+  /* ------------------------------------------------------------------ events */
+  var evList=$('evList'), evCount=0;
+  function clock(){var s=Math.floor((Date.now()-S.t0)/1000);return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+  function logEv(kind,reason,obj,msg){
+    var d=document.createElement('div');
+    d.className='ev new '+(kind==='Warning'?'warn':kind==='Info'?'info':'');
+    d.innerHTML='<span class="et">'+clock()+'</span><span class="er">'+reason+
+      '</span><span class="eo">'+obj+'</span><span class="em"></span>';
+    d.lastChild.textContent=msg; d.title=reason+'  '+obj+'  —  '+msg;
+    evList.appendChild(d);
+    while(evList.children.length>90)evList.removeChild(evList.firstChild);
+    evList.scrollTop=evList.scrollHeight;
+    if(reason==='FailedScheduling'&&CH.step===3&&CH.s3kill)CH.s3sawFS=true;
+    evCount++;
+  }
+
+  /* ------------------------------------------------------------------ render */
+  var chips={}; // pod.id -> element
+  var prev={spec:3,gen:1,obs:1,ready:3,avail:'True'};
+
+  /* control-plane chip pulse: shows WHICH component just acted */
+  function pulse(id){var el=$(id);el.classList.remove('act');void el.offsetWidth;el.classList.add('act')}
+
+  function chipFor(p){
+    var el=chips[p.id];
+    if(!el){
+      el=document.createElement('div');
+      el.innerHTML='<span class="dotp"></span><span class="pname"></span><span class="ph"></span>';
+      el.querySelector('.pname').textContent=p.name.slice(-5);
+      el.addEventListener('click',function(ev){ev.stopPropagation();userKill(p)});
+      chips[p.id]=el;
+    }
+    el.className='pod '+p.phase;
+    el.title=p.phase==='Running'?p.name+' — click to kill':p.name;
+    el.querySelector('.ph').textContent=p.phase==='ContainerCreating'?'Creating':p.phase;
+    return el;
+  }
+
+  function render(){
+    /* pods → worker area or unscheduled tray */
+    var area=$('podArea'), tray=$('tray'), seen={};
+    S.pods.forEach(function(p){
+      seen[p.id]=1;
+      var el=chipFor(p), want=p.node? area : tray;
+      if(el.parentNode!==want)want.appendChild(el);
+    });
+    Object.keys(chips).forEach(function(id){
+      if(!seen[id]){if(chips[id].parentNode)chips[id].parentNode.removeChild(chips[id]);delete chips[id];}
+    });
+    var pendingCount=S.pods.filter(function(p){return !p.node&&p.phase!=='Terminating'}).length;
+    $('trayEmpty').style.display=pendingCount?'none':'';
+    tray.classList.toggle('hot',pendingCount>0&&S.cordoned);
+
+    /* deployment card */
+    var ready=running().length;
+    var minAvail=Math.max(1,S.spec-Math.floor(S.spec*0.25));
+    var avail=ready>=minAvail?'True':'False';
+    setVal('vSpec',S.spec,prev.spec,'flash');            prev.spec=S.spec;
+    setVal('vGen',S.generation,prev.gen,'flash');        prev.gen=S.generation;
+    setVal('vObs',S.observedGeneration,prev.obs,'flash-ok'); prev.obs=S.observedGeneration;
+    setVal('vReady',ready,prev.ready,'flash-ok');        prev.ready=ready;
+    var va=$('vAvail');
+    if(avail!==prev.avail){va.classList.remove('flash','flash-ok');void va.offsetWidth;
+      va.classList.add(avail==='True'?'flash-ok':'flash');}
+    va.textContent=avail; va.classList.toggle('true',avail==='True');
+    va.classList.toggle('false',avail!=='True'); prev.avail=avail;
+    $('lagPill').classList.toggle('show',S.observedGeneration<S.generation);
+
+    /* controls */
+    $('repNum').textContent=S.spec;
+    $('repMinus').disabled=S.spec<=1; $('repPlus').disabled=S.spec>=8;
+    $('killBtn').disabled=running().length===0;
+    var cb=$('cordonBtn');
+    cb.classList.toggle('on',S.cordoned);
+    cb.innerHTML=S.cordoned?'<span class="ic">▶</span> Uncordon worker-1':'<span class="ic">⏸</span> Cordon worker-1';
+    $('cordonBadge').style.display=S.cordoned?'':'none';
+    var w=$('worker');
+    w.classList.toggle('cordoned',S.cordoned);
+    w.title=S.cordoned?'worker-1 — click to uncordon':'worker-1 — click to cordon';
+    $('nodeHint').textContent=S.cordoned?'▶ click to uncordon':'⏸ click to cordon';
+
+    updateChallenge();
+  }
+  function setVal(id,v,old,cls){
+    var el=$(id);
+    if(v!==old){el.classList.remove('flash','flash-ok');void el.offsetWidth;el.classList.add(cls);}
+    el.textContent=v;
+  }
+
+  /* ------------------------------------------------------------------ pod lifecycle */
+  function schedulePod(p){ /* bind + start with organic jitter */
+    setTimeout(function(){
+      if(p.phase!=='Pending'||S.cordoned)return;
+      p.node='worker-1'; p.phase='ContainerCreating';
+      pulse('cpSched'); pulse('cpEtcd'); /* binding is persisted */
+      logEv('Normal','Scheduled','pod/'+p.name,'Successfully assigned nimbus/'+p.name+' to worker-1');
+      render();
+      setTimeout(function(){
+        if(p.phase!=='ContainerCreating')return;
+        p.phase='Running';
+        logEv('Normal','Started','pod/'+p.name,'Started container gateway');
+        render();
+      },500+Math.random()*1000);
+    },120+Math.random()*450);
+  }
+  function terminatePod(p,reason,msg,obj){
+    p.phase='Terminating';
+    logEv('Normal',reason,obj||('pod/'+p.name),msg);
+    render();
+    setTimeout(function(){
+      var i=S.pods.indexOf(p); if(i>-1)S.pods.splice(i,1);
+      render();
+    },700);
+  }
+
+  /* ------------------------------------------------------------------ controller tick */
+  var tick=0;
+  function setPhase(ph){
+    ['phObserve','phDiff','phAct'].forEach(function(id){$(id).classList.remove('on')});
+    if(ph)$(ph).classList.add('on');
+  }
+  function controllerTick(){
+    tick++;
+    setPhase('phObserve');
+    setTimeout(function(){setPhase('phDiff')},330);
+    setTimeout(function(){setPhase('phAct');act()},660);
+  }
+  function act(){
+    var worked=false;
+    /* 1. acknowledge latest spec — observedGeneration catches up ONE tick later */
+    if(S.observedGeneration<S.generation){
+      S.observedGeneration=S.generation; worked=true;
+      if(S.spec!==S.lastReconciledSpec){
+        logEv('Normal','ScalingReplicaSet','deployment/nimbus-gateway',
+          'Scaled '+(S.spec>S.lastReconciledSpec?'up':'down')+' replica set '+RS+' to '+S.spec);
+        S.lastReconciledSpec=S.spec;
+      }
+    }
+    /* 2. diff actual vs desired, act on the gap */
+    var act_=alive(), gap=S.spec-act_.length;
+    if(gap>0){
+      worked=true;
+      for(var i=0;i<gap;i++){
+        var p=newPod('Pending',null);
+        S.pods.push(p);
+        logEv('Normal','SuccessfulCreate','replicaset/'+RS,'Created pod: '+p.name);
+      }
+    }else if(gap<0){
+      worked=true;
+      /* prefer pending, then youngest */
+      var victims=act_.slice().sort(function(a,b){
+        var ap=a.phase==='Pending'?0:1, bp=b.phase==='Pending'?0:1;
+        return ap-bp || b.born-a.born;
+      }).slice(0,-gap);
+      victims.forEach(function(v){
+        terminatePod(v,'SuccessfulDelete','Deleted pod: '+v.name,'replicaset/'+RS);
+      });
+    }
+    if(worked){pulse('cpCtrl');pulse('cpEtcd');} /* RS math ran + result persisted */
+    /* 3. scheduler pass over unbound pods */
+    S.pods.forEach(function(p){
+      if(p.phase!=='Pending'||p.node)return;
+      if(S.cordoned){
+        if(Date.now()-p.fsAt>2800){
+          p.fsAt=Date.now();
+          pulse('cpSched');
+          logEv('Warning','FailedScheduling','pod/'+p.name,
+            '0/2 nodes are available: 1 node(s) had untolerated taint {node-role.kubernetes.io/control-plane: }, 1 node(s) were unschedulable.');
+        }
+      }else{
+        schedulePod(p);
+      }
+    });
+    render();
+  }
+
+  /* ------------------------------------------------------------------ controls */
+  function setReplicas(n){
+    n=Math.max(1,Math.min(8,n));
+    if(n===S.spec)return;
+    S.spec=n;
+    S.generation++;                 /* spec change → generation bumps NOW */
+    pulse('cpApi'); pulse('cpEtcd'); /* spec write hits the API server, persisted in etcd */
+    if(n===5)CH.s1scaled=true;
+    if(CH.step===2&&CH.s2killGen>-1&&S.generation!==CH.s2killGen)CH.s2killGen=-1; /* spec changed: redo the kill */
+    render();
+  }
+  $('repPlus').addEventListener('click',function(){setReplicas(S.spec+1)});
+  $('repMinus').addEventListener('click',function(){setReplicas(S.spec-1)});
+
+  /* one code path for user-initiated kills: Kill-random button AND clicking a pod chip */
+  var pillT=0;
+  function userKill(p){
+    if(!p||p.phase!=='Running')return;
+    pulse('cpApi'); pulse('cpEtcd'); /* delete is an API write, persisted */
+    terminatePod(p,'Killing','Stopping container gateway (pod deleted by user)');
+    /* teaching moment: generation did NOT move */
+    var pill=$('genPill'); pill.classList.add('show');
+    clearTimeout(pillT); pillT=setTimeout(function(){pill.classList.remove('show')},2600);
+    if(CH.step===2)CH.s2killGen=S.generation;
+    if(CH.step===3&&S.cordoned)CH.s3kill=true;
+  }
+  $('killBtn').addEventListener('click',function(){
+    var r=running(); if(!r.length)return;
+    userKill(r[Math.floor(Math.random()*r.length)]);
+  });
+
+  /* one code path for cordon: button AND clicking the worker node panel */
+  function toggleCordon(){
+    S.cordoned=!S.cordoned;
+    pulse('cpApi'); pulse('cpEtcd'); /* node spec write */
+    if(S.cordoned){
+      logEv('Normal','NodeNotSchedulable','node/worker-1','Node worker-1 status is now: NodeNotSchedulable');
+    }else{
+      logEv('Normal','NodeSchedulable','node/worker-1','Node worker-1 status is now: NodeSchedulable');
+    }
+    render();
+  }
+  $('cordonBtn').addEventListener('click',toggleCordon);
+  $('worker').addEventListener('click',toggleCordon);
+
+  $('reset').addEventListener('click',function(){location.reload()});
+
+  /* ------------------------------------------------------------------ challenge */
+  var CH_TEXT=[
+    'Step 1 — Scale to <code>5</code> replicas. Watch <code>generation</code> jump ahead of <code>observedGeneration</code>, then converge pod by pod.',
+    'Step 2 — Kill a Pod. Confirm <code>generation</code> does <b>not</b> move: status changed, spec didn’t. The loop replaces it anyway.',
+    'Step 3 — Cordon worker-1, then kill a Pod. The replacement parks as <code>Pending</code> with <code>FailedScheduling</code>. Uncordon to converge.'
+  ];
+  var SUCCESS='Challenge complete! You just felt the level-triggered loop: <code>generation</code> moves only when <b>you</b> change spec; the controller closes every other gap — even ones it was told about late. This is the contract every controller in this course honors.';
+  function converged(){
+    return S.observedGeneration===S.generation &&
+           running().length===S.spec && alive().length===S.spec;
+  }
+  function updateChallenge(){
+    if(CH.step===1&&!CH.done[0]){
+      if(CH.s1scaled&&S.spec===5&&converged()){CH.done[0]=true;CH.step=2;CH.view=2;}
+    }else if(CH.step===2&&!CH.done[1]){
+      if(CH.s2killGen>-1&&S.generation===CH.s2killGen&&converged()){CH.done[1]=true;CH.step=3;CH.view=3;}
+    }else if(CH.step===3&&!CH.done[2]){
+      if(CH.s3kill&&CH.s3sawFS&&!S.cordoned&&converged()){CH.done[2]=true;CH.step=4;}
+    }
+    for(var i=1;i<=3;i++){
+      var d=$('d'+i); d.className='dot'+(CH.done[i-1]?' done':'')+(CH.view===i?' cur':'');
+      d.setAttribute('aria-current',CH.view===i?'step':'false');
+      if(CH.done[i-1])d.textContent='✓'; else d.textContent=i;
+    }
+    var box=$('challenge'), txt=$('chTxt');
+    if(CH.step===4){box.classList.add('success');txt.innerHTML=SUCCESS;}
+    else {box.classList.remove('success');txt.innerHTML=CH_TEXT[CH.view-1];}
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('#challenge .dot'),function(dot){
+    function selectStep(){CH.view=Number(dot.dataset.step);updateChallenge();}
+    dot.addEventListener('click',selectStep);
+    dot.addEventListener('keydown',function(e){
+      if(e.key==='Enter'||e.key===' '){e.preventDefault();selectStep();}
+    });
+  });
+
+  /* ------------------------------------------------------------------ boot */
+  for(var i=0;i<3;i++){var p=newPod('Running','worker-1');S.pods.push(p);}
+  logEv('Info','SimulatorReady','deployment/nimbus-gateway',
+    'Cluster converged: 3/3 ready. Disturb it — the loop will notice.');
+  render();
+  controllerTick();
+  setInterval(controllerTick,1000);
+})();
+</script>
+</body>
+</html>

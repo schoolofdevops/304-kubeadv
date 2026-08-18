@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scaling Envelope — the control-plane knee · LIST vs WATCH · APF saturation</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e; --line2:#1c2740;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(10.5px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  header h1 .k8s{color:var(--accent)}
+  #hsub{margin-left:auto;font-family:var(--mono);font-size:.8rem;color:var(--faint);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;min-height:24px;flex:0 0 auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  /* ---------- challenge banner ---------- */
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+  #challenge.success .txt{white-space:normal;line-height:1.3}
+
+  /* ---------- main grid ---------- */
+  #main{flex:1 1 auto;display:grid;grid-template-columns:clamp(230px,20rem,320px) 1fr clamp(230px,21rem,330px);gap:6px;min-height:0}
+  #main>.panel{min-width:0}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;min-height:0;overflow:hidden}
+  .panel h2{font-size:.76rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .panel h2 span{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400}
+
+  /* ---------- left: dials ---------- */
+  #dials{display:flex;flex-direction:column;gap:7px;overflow-y:auto;min-height:0}
+  .dial{border:1px solid var(--line2);border-radius:9px;background:var(--panel2);padding:6px 9px;
+    display:flex;flex-direction:column;gap:4px}
+  .dial .dl{font-family:var(--mono);font-size:.74rem;color:var(--dim);display:flex;justify-content:space-between;align-items:baseline;cursor:help}
+  .dial .dl b{color:var(--accent);font-weight:700;font-size:.86rem}
+  .dial input[type=range]{width:100%;cursor:pointer;accent-color:var(--accent);height:1.1rem}
+  .dial .dsub{font-size:.66rem;color:var(--faint);font-family:var(--mono)}
+
+  #watchToggleWrap{border:1px solid var(--line2);border-radius:9px;background:var(--panel2);padding:6px 8px;margin-top:auto}
+  #watchToggle{display:flex;align-items:center;gap:8px;cursor:pointer;border:1px solid var(--line2);border-radius:7px;
+    background:var(--panel2);padding:5px 8px;transition:border-color .15s}
+  #watchToggle:hover{border-color:var(--faint)}
+  #watchToggle .dot{width:.6rem;height:.6rem;border-radius:50%;background:var(--faint);flex:0 0 auto}
+  #watchToggle.on .dot{background:var(--ok);box-shadow:0 0 6px rgba(61,220,151,.8)}
+  #watchToggle .lbl{font-family:var(--mono);font-weight:700;font-size:.86rem;color:var(--dim)}
+  #watchToggle.on .lbl{color:var(--ok)}
+  #watchToggle .sub{margin-left:auto;font-size:.66rem;color:var(--faint)}
+  #watchNote{font-size:.68rem;color:var(--faint);font-family:var(--mono);margin-top:4px;line-height:1.35}
+
+  /* ---------- middle: curve ---------- */
+  #curveWrap{display:flex;flex-direction:column;min-height:0;gap:5px}
+  #curveHead{flex:0 0 auto;display:flex;align-items:baseline;gap:8px}
+  #curveHead .colh{font-size:.64rem;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);cursor:default}
+  #kneeReadout{margin-left:auto;font-family:var(--mono);font-size:.72rem;color:var(--warn);cursor:default}
+  #curveBox{flex:1;min-height:0;border:1px solid var(--line2);border-radius:9px;background:var(--panel2);
+    position:relative;cursor:default;overflow:hidden}
+  svg#curveSvg{width:100%;height:100%;display:block}
+  #eventsAnno{border:1px dashed var(--warn);border-radius:6px;background:rgba(245,185,66,.08);
+    padding:4px 8px;font-family:var(--mono);font-size:.72rem;color:var(--warn);display:none;line-height:1.35;cursor:default}
+  #eventsAnno.on{display:block}
+  #tryScenarios{display:flex;gap:5px;flex:0 0 auto}
+  #tryScenarios button{flex:1;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);
+    font-family:var(--mono);font-size:.68rem;font-weight:700;padding:4px 3px;cursor:pointer;transition:border-color .15s,color .15s;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #tryScenarios button:hover{border-color:var(--accent);color:var(--accent)}
+
+  /* ---------- right: gauges ---------- */
+  #gauges{display:flex;flex-direction:column;gap:5px;overflow-y:auto;min-height:0}
+  .gauge{border:1px solid var(--line2);border-radius:9px;background:var(--panel2);padding:6px 9px;
+    display:flex;flex-direction:column;gap:3px;cursor:help;transition:border-color .2s,box-shadow .2s}
+  .gauge:hover{border-color:var(--faint)}
+  .gauge.knee{border-color:var(--bad);box-shadow:0 0 0 1px rgba(255,107,107,.25)}
+  .gauge.healthy{border-color:var(--ok)}
+  .gauge .gh{display:flex;justify-content:space-between;align-items:baseline}
+  .gauge .gl{font-family:var(--mono);font-size:.72rem;color:var(--dim);letter-spacing:.2px}
+  .gauge .gv{font-family:var(--mono);font-weight:700;font-size:.94rem;color:var(--txt)}
+  .gauge .gv.bad{color:var(--bad)}
+  .gauge .gv.warn{color:var(--warn)}
+  .gauge .gv.ok{color:var(--ok)}
+  .gauge .gbar{height:.55rem;border-radius:4px;background:var(--panel2);border:1px solid var(--line2);overflow:hidden}
+  .gauge .gbar i{display:block;height:100%;border-radius:3px;transition:width .25s,background .25s;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .gauge .gbar i.bad{background:linear-gradient(90deg,var(--warn),var(--bad))}
+  .gauge .gsub{font-size:.66rem;color:var(--faint);font-family:var(--mono)}
+  .gauge.collapsed{opacity:.55}
+  .gauge.collapsed .gv{color:var(--ok)}
+
+  #apfBadge{display:none;align-items:center;gap:5px;font-family:var(--mono);font-size:.7rem;color:var(--bad);
+    border:1px dashed var(--bad);border-radius:6px;padding:3px 6px;background:rgba(255,107,107,.07);line-height:1.3;cursor:default}
+  #apfBadge.on{display:flex}
+
+  /* ---------- event log ---------- */
+  #events{flex:0 0 clamp(70px,5.8rem,100px);display:flex;flex-direction:column;min-height:0}
+  #events,#events *{cursor:default}
+  #evList{flex:1;overflow-y:auto;font-family:var(--mono);font-size:.76rem;line-height:1.55;scrollbar-width:thin}
+  .ev{display:flex;gap:8px;white-space:nowrap;overflow:hidden}
+  .ev .et{color:var(--faint);flex:0 0 3.6rem}
+  .ev .er{flex:0 0 5.4rem;color:var(--accent2);font-weight:700}
+  .ev.pass .er{color:var(--ok)}
+  .ev.out .er{color:var(--bad)}
+  .ev.warn .er{color:var(--warn)}
+  .ev .em{flex:1;color:var(--txt);opacity:.9;overflow:hidden;text-overflow:ellipsis}
+  .ev.new{animation:evin .4s ease-out}
+  @keyframes evin{0%{background:rgba(76,201,240,.12)}100%{background:transparent}}
+  #note{margin-left:auto;font-size:1rem;color:var(--faint);cursor:help;position:relative;padding:0 4px}
+  #note:hover{color:var(--dim)}
+  #note:hover::after,#note:active::after{content:attr(data-tip);position:absolute;right:0;bottom:calc(100% + 7px);
+    z-index:40;width:44ch;background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.82rem/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+
+  /* narrow fallback: stack + allow scroll rather than clip */
+  @media (max-width:760px){
+    body{overflow:auto}
+    #main{grid-template-columns:1fr}
+    #app{height:auto;min-height:100%}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1><span class="k8s">⎈</span> Scaling Envelope</h1>
+    <span id="hsub">the control-plane knee · apiserver p99 stays flat while the client chokes on payload</span>
+    <button id="reset" title="Reset the simulator">↺ Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Try this</span>
+    <span class="steps">
+      <span class="dot" id="d1">1</span><span class="dot" id="d2">2</span><span class="dot" id="d3">3</span>
+    </span>
+    <span class="txt" id="chTxt"></span>
+  </div>
+
+  <div id="main">
+    <!-- LEFT: dials -->
+    <div class="panel" id="dialsPanel">
+      <h2>Dials <span>· cluster shape</span></h2>
+      <div id="dials">
+        <div class="dial">
+          <div class="dl" title="Total worker nodes in the cluster. Fake kwok nodes cost almost nothing — the control plane still has to track every one.">nodes <b><span id="nodesVal">0</span></b></div>
+          <input type="range" id="nodesRange" min="0" max="5000" step="50" value="0">
+          <div class="dsub">0 – 5,000</div>
+        </div>
+        <div class="dial">
+          <div class="dl" title="Pods scheduled per node. Total pods = nodes × pods/node — this is the object count etcd and the apiserver actually carry.">pods / node <b><span id="podsVal">0</span></b></div>
+          <input type="range" id="podsRange" min="0" max="110" step="1" value="0">
+          <div class="dsub">0 – 110</div>
+        </div>
+        <div class="dial">
+          <div class="dl" title="Clients holding an open watch (controllers, kubectl get -w, informers). Each watch client the apiserver serves from the watch cache costs memory proportional to objects watched.">watch clients <b><span id="watchVal">0</span></b></div>
+          <input type="range" id="watchRange" min="0" max="500" step="5" value="0">
+          <div class="dsub">0 – 500</div>
+        </div>
+        <div class="dial">
+          <div class="dl" title="Unbounded full LIST calls per second — e.g. a controller doing kubectl get pods -A on a resync loop instead of watching. This is the classic control-plane killer.">list QPS <b><span id="qpsVal">0</span></b></div>
+          <input type="range" id="qpsRange" min="0" max="50" step="1" value="0">
+          <div class="dsub">0 – 50 unbounded LISTs/s</div>
+        </div>
+      </div>
+
+      <div id="watchToggleWrap">
+        <div id="watchToggle" title="Toggle whether controllers use a WATCH (O(changes)) instead of a full LIST (O(objects)) to stay in sync. WATCH never pays the full-payload tax on steady state.">
+          <span class="dot"></span>
+          <span class="lbl" id="watchLbl">use LIST (poll)</span>
+          <span class="sub">click to toggle</span>
+        </div>
+        <div id="watchNote">LIST: cost ∝ total objects, every call. WATCH: cost ∝ changes since last resourceVersion — the mitigation.</div>
+      </div>
+    </div>
+
+    <!-- MIDDLE: curve -->
+    <div class="panel" id="curveWrap">
+      <div id="curveHead">
+        <span class="colh">Client latency vs total pods — the knee</span>
+        <span id="kneeReadout"></span>
+      </div>
+      <div id="curveBox">
+        <svg id="curveSvg" viewBox="0 0 400 220" preserveAspectRatio="none"></svg>
+      </div>
+      <div id="eventsAnno">⚠ etcd objects: <b id="evVsPods">events &gt; pods</b> — move Events to a separate etcd (the OpenAI lesson, 7.5k-node incident)</div>
+      <div id="tryScenarios">
+        <button id="sc1" title="Set nodes/pods to reproduce the live kwok-scale spike at ~10k pods">Load 10k pods</button>
+        <button id="sc2" title="Crank list QPS to saturate APF">Crank list QPS</button>
+        <button id="sc3" title="Flip the WATCH toggle on">Flip to WATCH</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: gauges -->
+    <div class="panel" id="gaugesPanel">
+      <h2>Gauges <span>· derived, live</span></h2>
+      <div id="gauges">
+        <div class="gauge" id="gListLatency" title="Wall-clock time a client waits for a full unpaginated LIST to arrive and deserialize. Grows with total payload, not server compute. Collapses under WATCH.">
+          <div class="gh"><span class="gl">full-LIST client latency</span><span class="gv" id="vListLatency">0.08 s</span></div>
+          <div class="gbar"><i id="bListLatency" style="width:1%"></i></div>
+          <div class="gsub" id="subListLatency">0 pods</div>
+        </div>
+        <div class="gauge" id="gPayload" title="Bytes transferred for one full LIST response. ~6 KB per pod object (managedFields, status, etc). This is what the client actually pays for.">
+          <div class="gh"><span class="gl">LIST payload size</span><span class="gv" id="vPayload">0 MB</span></div>
+          <div class="gbar"><i id="bPayload" style="width:1%"></i></div>
+          <div class="gsub" id="subPayload">~6 KB / pod object</div>
+        </div>
+        <div class="gauge" id="gApiP99" title="apiserver_request_duration_seconds p99 for LIST requests served from the watch cache. Stays flat because the server did almost no work — the histogram looks healthy even as the client suffers.">
+          <div class="gh"><span class="gl">apiserver p99 (server-side)</span><span class="gv ok" id="vApiP99">16 ms</span></div>
+          <div class="gbar"><i id="bApiP99" style="width:3%"></i></div>
+          <div class="gsub">served from watch cache — stays flat</div>
+        </div>
+        <div class="gauge" id="gEtcd" title="apiserver_storage_objects — total objects etcd carries: pods + events (events ≈ 1.1× pods under steady churn, per the live kwok-scale spike).">
+          <div class="gh"><span class="gl">etcd object count</span><span class="gv" id="vEtcd">0</span></div>
+          <div class="gbar"><i id="bEtcd" style="width:1%"></i></div>
+          <div class="gsub" id="subEtcd">pods + events + nodes + leases</div>
+        </div>
+        <div class="gauge" id="gWatchMem" title="Watch-cache memory ≈ objects held × number of active watch clients. Every controller with an open watch multiplies this.">
+          <div class="gh"><span class="gl">watch-cache memory</span><span class="gv" id="vWatchMem">0 MB</span></div>
+          <div class="gbar"><i id="bWatchMem" style="width:1%"></i></div>
+          <div class="gsub" id="subWatchMem">objects × watch clients</div>
+        </div>
+        <div class="gauge" id="gApf" title="apiserver_current_inflight_requests as a share of APF's configured seats. Past the threshold, Priority &amp; Fairness starts queuing, then rejecting, requests — the callback to M2.">
+          <div class="gh"><span class="gl">inflight / APF saturation</span><span class="gv" id="vApf">0%</span></div>
+          <div class="gbar"><i id="bApf" style="width:0%"></i></div>
+          <div class="gsub" id="subApf">rises with list QPS</div>
+        </div>
+        <div id="apfBadge">⛔ <b>APF saturated</b> — requests queued/rejected past the seat limit</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="events">
+    <h2>Control-plane log <span>— derived readings</span>
+      <span id="note" data-tip="Honest-model note: numbers mirror the live kwok-scale spike (planning/lab-tests/m6-spike.md) — a real kwokctl control plane (etcd + kube-apiserver v1.36.1) at ~1000 fake nodes / ~11k fake pods. full-LIST client wall-clock 0.53s@1k / 2.22s@5k / 4.85s@10k pods; at 10,981 pods paired measurement: client 7.28s, payload 68.1MB, apiserver-side handling 0.093s (server histogram looked healthy the whole time); apiserver_storage_objects showed events(11,983) > pods(10,981). This sim interpolates a smooth curve through those anchors and extrapolates a cliff near 20k pods (the step that blew the 2-min budget live) — it is a model of the shape, not a live cluster.">ⓘ</span></h2>
+    <div id="evList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id)};
+  var CH={step:1, done:[false,false,false], sawKnee:false, sawApf:false, sawWatchCollapse:false};
+
+  /* ------------------------------------------------------------------ model
+     S.nodes, S.podsPerNode, S.watchClients, S.listQps, S.useWatch
+     All gauges are DERIVED (pure function of dials) — no ticking loop needed,
+     this sim is about the shape of the envelope, not time-based reconciliation.
+     Ground truth anchors (live kwok-scale spike, m6-spike.md):
+       pods=0     -> full-list 0.08s
+       pods=1000  -> full-list 0.53s
+       pods=5000  -> full-list 2.22s
+       pods=10000 -> full-list 4.85s
+       pods=10981 -> client 7.28s, payload 68.1MB, server-side 0.093s (paired reading)
+       cliff      -> ~20000 pods (timed out live; modeled as a steep climb, not literal ∞)
+     apiserver p99 stays ~flat (served from watch cache, all buckets le="1", avg ~16ms)
+     regardless of pod count, UNLESS list QPS pushes APF into saturation (a different
+     axis — concurrent request volume, not payload size). */
+  function freshState(){
+    return { nodes:0, podsPerNode:0, watchClients:0, listQps:0, useWatch:false, t0:Date.now() };
+  }
+  var S=freshState();
+
+  /* ------------------------------------------------------------------ events log */
+  var evList=$('evList');
+  function clock(){var s=Math.floor((Date.now()-S.t0)/1000);return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+  function logEv(kind,reason,msg){
+    var d=document.createElement('div');
+    d.className='ev new '+(kind==='out'?'out':kind==='pass'?'pass':kind==='warn'?'warn':'');
+    d.innerHTML='<span class="et"></span><span class="er"></span><span class="em"></span>';
+    d.children[0].textContent=clock();
+    d.children[1].textContent=reason; d.children[2].textContent=msg;
+    d.title=reason+'  —  '+msg;
+    evList.appendChild(d);
+    while(evList.children.length>90)evList.removeChild(evList.firstChild);
+    evList.scrollTop=evList.scrollHeight;
+  }
+
+  /* ------------------------------------------------------------------ derived math
+     Piecewise-linear interpolation through the live anchors, then a steep
+     extrapolated cliff beyond 10k toward ~20k — matches "roughly linear then a
+     cliff" from the spike notes without inventing a fake closed-form model. */
+  var ANCHORS=[ {p:0,s:0.08}, {p:1000,s:0.53}, {p:5000,s:2.22}, {p:10000,s:4.85}, {p:10981,s:7.28} ];
+  function totalPods(){ return Math.round(S.nodes*S.podsPerNode); }
+
+  function listLatencySeconds(pods){
+    if(pods<=0) return 0.08;
+    // interpolate within anchors
+    for(var i=0;i<ANCHORS.length-1;i++){
+      var a=ANCHORS[i], b=ANCHORS[i+1];
+      if(pods>=a.p && pods<=b.p){
+        var t=(pods-a.p)/(b.p-a.p);
+        return a.s + t*(b.s-a.s);
+      }
+    }
+    // beyond last anchor (10,981): steep cliff toward ~20k (timed out live)
+    var last=ANCHORS[ANCHORS.length-1];
+    if(pods<=20000){
+      var t2=(pods-last.p)/(20000-last.p);
+      // superlinear climb — cliff shape, not a straight extension
+      return last.s + Math.pow(t2,1.6)*40; // ~47s approaching 20k
+    }
+    // past the cliff — client effectively stalls (modeled, not literal)
+    return 47 + (pods-20000)/1000*8;
+  }
+  function payloadMB(pods){ return pods*6/1024; } // ~6KB/pod object, spike-anchored (68.1MB @ 10,981)
+
+  function apiServerP99Ms(){
+    // Server-side stays flat — served from watch cache regardless of pod count,
+    // UNLESS list QPS saturates APF (a concurrency problem, not a payload problem).
+    var qpsLoad=S.listQps/50; // 0..1
+    var base=16; // ms, live-measured avg
+    if(qpsLoad>0.7){
+      // past APF's comfortable seat budget, queuing adds real server-side latency
+      return Math.round(base + Math.pow((qpsLoad-0.7)/0.3,2)*180);
+    }
+    return base + Math.round(qpsLoad*6); // tiny, near-flat wobble
+  }
+
+  function etcdCounts(pods){
+    var events=Math.round(pods*1.1);
+    var nodesN=S.nodes;
+    var leases=Math.max(nodesN,3);
+    return {pods:pods, events:events, nodes:nodesN, leases:leases, total:pods+events+nodesN+leases};
+  }
+
+  function watchCacheMB(pods){
+    // objects held × watch clients, ~1.2KB resident per cached object per client (rough model)
+    var perClientKB=pods*1.2;
+    return (perClientKB*Math.max(S.watchClients,0))/1024;
+  }
+
+  function apfSaturationPct(){
+    // list QPS is the dominant driver of concurrent inflight; watch clients add a
+    // small steady tax. Modeled 0-100%, with a "past threshold" queuing zone >70%.
+    var fromQps=(S.listQps/50)*88;
+    var fromWatch=(Math.min(S.watchClients,500)/500)*12;
+    return Math.min(100, fromQps+fromWatch);
+  }
+
+  var APF_THRESHOLD=70;
+
+  /* ------------------------------------------------------------------ render */
+  function fmtS(s){ return s<10 ? s.toFixed(2)+' s' : s.toFixed(1)+' s'; }
+  function fmtMB(mb){ return mb<1 ? (mb*1024).toFixed(0)+' KB' : mb.toFixed(1)+' MB'; }
+
+  function render(){
+    $('nodesVal').textContent=S.nodes.toLocaleString();
+    $('podsVal').textContent=S.podsPerNode;
+    $('watchVal').textContent=S.watchClients;
+    $('qpsVal').textContent=S.listQps;
+
+    var pods=totalPods();
+    var latency=listLatencySeconds(pods);
+    var payload=payloadMB(pods);
+    var p99=apiServerP99Ms();
+    var etcd=etcdCounts(pods);
+    var wmem=watchCacheMB(pods);
+    var apf=apfSaturationPct();
+
+    var collapsed=S.useWatch;
+
+    /* full-list client latency */
+    var gL=$('gListLatency');
+    if(collapsed){
+      $('vListLatency').textContent='O(changes)';
+      $('vListLatency').className='gv ok';
+      $('bListLatency').style.width='4%';
+      $('bListLatency').className='';
+      $('subListLatency').textContent=pods.toLocaleString()+' pods watched, not listed — WATCH active';
+      gL.classList.add('collapsed'); gL.classList.remove('knee');
+    } else {
+      $('vListLatency').textContent=fmtS(latency);
+      $('vListLatency').className='gv '+(latency>=4.5?'bad':latency>=2?'warn':'');
+      var latPct=Math.min(100, latency/12*100);
+      $('bListLatency').style.width=Math.max(1,latPct)+'%';
+      $('bListLatency').className=latency>=4.5?'bad':'';
+      $('subListLatency').textContent=pods.toLocaleString()+' pods — grows with total objects, not server load';
+      gL.classList.remove('collapsed');
+      gL.classList.toggle('knee', latency>=4.5);
+    }
+
+    /* payload */
+    var gP=$('gPayload');
+    if(collapsed){
+      $('vPayload').textContent='~KB (diff only)';
+      $('vPayload').className='gv ok';
+      $('bPayload').style.width='4%';
+      $('bPayload').className='';
+      $('subPayload').textContent='WATCH sends only changed objects since resourceVersion';
+      gP.classList.add('collapsed'); gP.classList.remove('knee');
+    } else {
+      $('vPayload').textContent=fmtMB(payload);
+      $('vPayload').className='gv '+(payload>=40?'bad':payload>=15?'warn':'');
+      var payPct=Math.min(100, payload/120*100);
+      $('bPayload').style.width=Math.max(1,payPct)+'%';
+      $('bPayload').className=payload>=40?'bad':'';
+      $('subPayload').textContent='~6 KB / pod object × '+pods.toLocaleString()+' pods';
+      gP.classList.remove('collapsed');
+      gP.classList.toggle('knee', payload>=40);
+    }
+
+    /* apiserver p99 — the key contrast: stays flat regardless of pods/payload */
+    $('vApiP99').textContent=p99+' ms';
+    var p99Pct=Math.min(100, p99/300*100);
+    $('bApiP99').style.width=Math.max(2,p99Pct)+'%';
+    var p99Hot=p99>=120;
+    $('vApiP99').className='gv '+(p99Hot?'bad':'ok');
+    $('bApiP99').className=p99Hot?'bad':'';
+    var gA=$('gApiP99');
+    gA.classList.toggle('healthy', !p99Hot);
+    gA.classList.toggle('knee', p99Hot);
+
+    /* etcd objects */
+    $('vEtcd').textContent=etcd.total.toLocaleString();
+    var etcdPct=Math.min(100, etcd.total/45000*100);
+    $('bEtcd').style.width=Math.max(1,etcdPct)+'%';
+    $('subEtcd').textContent='pods '+etcd.pods.toLocaleString()+' · events '+etcd.events.toLocaleString()+
+      ' · nodes '+etcd.nodes.toLocaleString()+' · leases '+etcd.leases.toLocaleString();
+    var eventsOverPods = etcd.events>etcd.pods && pods>0;
+    $('eventsAnno').classList.toggle('on', eventsOverPods);
+    $('evVsPods').textContent='events ('+etcd.events.toLocaleString()+') > pods ('+etcd.pods.toLocaleString()+')';
+
+    /* watch-cache memory */
+    $('vWatchMem').textContent=fmtMB(wmem);
+    var wmemPct=Math.min(100, wmem/400*100);
+    $('bWatchMem').style.width=Math.max(1,wmemPct)+'%';
+    $('bWatchMem').className=wmem>=250?'bad':'';
+    $('vWatchMem').className='gv '+(wmem>=250?'bad':wmem>=100?'warn':'');
+    $('subWatchMem').textContent=pods.toLocaleString()+' objects × '+S.watchClients+' watch clients';
+
+    /* APF saturation */
+    $('vApf').textContent=Math.round(apf)+'%';
+    $('bApf').style.width=Math.max(0,apf)+'%';
+    var apfHot=apf>=APF_THRESHOLD;
+    $('vApf').className='gv '+(apfHot?'bad':apf>=40?'warn':'');
+    $('bApf').className=apfHot?'bad':'';
+    $('subApf').textContent=apfHot?'past seat threshold — queuing/rejecting':'within configured seats';
+    $('apfBadge').classList.toggle('on', apfHot);
+    var gApfEl=$('gApf');
+    gApfEl.classList.toggle('knee', apfHot);
+
+    /* watch toggle UI */
+    var wt=$('watchToggle');
+    wt.classList.toggle('on', S.useWatch);
+    $('watchLbl').textContent = S.useWatch ? 'using WATCH (O(changes))' : 'use LIST (poll)';
+
+    renderCurve(pods, latency, collapsed);
+    updateChallenge({pods:pods, latency:latency, p99:p99, apf:apf, collapsed:collapsed, eventsOverPods:eventsOverPods});
+
+    if(latency>=4.5 && !collapsed) CH.sawKnee=true;
+    if(apfHot) CH.sawApf=true;
+    if(collapsed && pods>=1000) CH.sawWatchCollapse=true;
+  }
+
+  /* ------------------------------------------------------------------ curve (SVG) */
+  var CURVE_MAX_PODS=20000;
+  function renderCurve(currentPods, currentLatency, collapsed){
+    var svg=$('curveSvg');
+    var W=400,H=220,padL=34,padB=20,padT=10,padR=8;
+    var plotW=W-padL-padR, plotH=H-padT-padB;
+    var maxLatency=50; // seconds, chart ceiling
+
+    var pts=[];
+    var N=60;
+    for(var i=0;i<=N;i++){
+      var p=Math.round(CURVE_MAX_PODS*i/N);
+      var lat=listLatencySeconds(p);
+      var x=padL+plotW*(p/CURVE_MAX_PODS);
+      var y=padT+plotH*(1-Math.min(lat,maxLatency)/maxLatency);
+      pts.push(x+','+y);
+    }
+    var pathD='M'+pts.join(' L');
+
+    var curX=padL+plotW*Math.min(currentPods,CURVE_MAX_PODS)/CURVE_MAX_PODS;
+    var curY=padT+plotH*(1-Math.min(currentLatency,maxLatency)/maxLatency);
+
+    // gridlines + axis labels
+    var gridSvg='';
+    [0,5000,10000,15000,20000].forEach(function(gx){
+      var x=padL+plotW*(gx/CURVE_MAX_PODS);
+      gridSvg+='<line x1="'+x+'" y1="'+padT+'" x2="'+x+'" y2="'+(padT+plotH)+'" stroke="#1c2740" stroke-width="1"/>';
+      gridSvg+='<text x="'+x+'" y="'+(H-4)+'" font-size="8" fill="#5a6a8c" text-anchor="middle" font-family="ui-monospace,monospace">'+(gx/1000)+'k</text>';
+    });
+    [0,10,20,30,40,50].forEach(function(gy){
+      var y=padT+plotH*(1-gy/maxLatency);
+      gridSvg+='<line x1="'+padL+'" y1="'+y+'" x2="'+(padL+plotW)+'" y2="'+y+'" stroke="#1c2740" stroke-width="1"/>';
+      gridSvg+='<text x="'+(padL-4)+'" y="'+(y+3)+'" font-size="8" fill="#5a6a8c" text-anchor="end" font-family="ui-monospace,monospace">'+gy+'s</text>';
+    });
+
+    // knee marker at ~10k
+    var kneeX=padL+plotW*(10000/CURVE_MAX_PODS);
+
+    var curveColor = collapsed ? '#3ddc97' : '#ff6b6b';
+    var curveOpacity = collapsed ? 0.35 : 1;
+
+    svg.innerHTML =
+      gridSvg +
+      '<line x1="'+kneeX+'" y1="'+padT+'" x2="'+kneeX+'" y2="'+(padT+plotH)+'" stroke="#f5b942" stroke-width="1" stroke-dasharray="3,3" opacity="0.6"/>' +
+      '<text x="'+kneeX+'" y="'+(padT+10)+'" font-size="7.5" fill="#f5b942" text-anchor="middle" font-family="ui-monospace,monospace">knee ~10k</text>' +
+      '<path d="'+pathD+'" fill="none" stroke="'+curveColor+'" stroke-width="2" opacity="'+curveOpacity+'"/>' +
+      '<circle cx="'+curX+'" cy="'+curY+'" r="4.5" fill="'+(collapsed?'#3ddc97':'#4cc9f0')+'" stroke="#0d1220" stroke-width="1.5"/>' +
+      (collapsed ? '<text x="'+Math.min(curX+8,plotW+padL-70)+'" y="'+(curY-8)+'" font-size="8.5" fill="#3ddc97" font-family="ui-monospace,monospace">WATCH: O(changes)</text>' : '');
+
+    $('kneeReadout').textContent = collapsed
+      ? 'WATCH active — cost decoupled from object count'
+      : (currentPods.toLocaleString()+' pods → '+fmtS(currentLatency));
+  }
+
+  /* ------------------------------------------------------------------ TRY-THIS challenge (auto-detected from state) */
+  var CH_TEXT=[
+    'Step 1 — Grow <b>nodes</b> and <b>pods/node</b> until total pods ≈ <code>10,000</code>. Watch full-LIST latency cross <code>~5s</code> while apiserver p99 stays flat — the server is fine, the client is choking on payload.',
+    'Step 2 — Crank <b>list QPS</b> toward <code>50</code>. Watch the APF saturation gauge climb past the threshold — now the server itself starts queuing/rejecting requests.',
+    'Step 3 — Flip <b>use WATCH instead of LIST</b>. Watch the list-cost gauges collapse to O(changes) — the mitigation, live.'
+  ];
+  var SUCCESS='Challenge complete! The knee is real but it is not where you would guess: the apiserver\'s own p99 metric stays healthy right up to the cliff, because a full LIST served from the watch cache is server-cheap. What you pay for is <b>transferring and deserializing the payload</b> — 68 MB at ~11k pods in the live spike, a 7s client wait against a 93ms server-side read. Push <b>list QPS</b> instead of payload and a different limit shows up: <b>APF saturation</b> — real concurrent request volume the server does have to queue for. The fix for both is the same shape: stop polling with unbounded LISTs and <b>watch</b> instead — O(changes), not O(objects).';
+
+  function updateChallenge(m){
+    if(CH.step===1){
+      if(m.pods>=9500 && !m.collapsed && m.latency>=4.5 && m.p99<120){
+        CH.done[0]=true; CH.step=2;
+        logEv('info','try-this','Step 1 done — ~10k pods: full-LIST latency '+fmtS(m.latency)+', apiserver p99 '+m.p99+'ms (flat).');
+      }
+    } else if(CH.step===2){
+      if(m.apf>=APF_THRESHOLD){
+        CH.done[1]=true; CH.step=3;
+        logEv('info','try-this','Step 2 done — list QPS pushed APF saturation to '+Math.round(m.apf)+'%, past the seat threshold.');
+      }
+    } else if(CH.step===3){
+      if(m.collapsed){
+        CH.done[2]=true; CH.step=4;
+        logEv('pass','try-this','Step 3 done — WATCH active, list-cost gauges collapsed to O(changes).');
+      }
+    }
+    renderChallengeUI();
+  }
+  function renderChallengeUI(){
+    for(var i=1;i<=3;i++){
+      var d=$('d'+i);d.className='dot'+(CH.done[i-1]?' done':CH.step===i?' cur':'');
+      d.textContent=CH.done[i-1]?'✓':i;
+    }
+    var box=$('challenge'),txt=$('chTxt');
+    if(CH.step>=4){box.classList.add('success');txt.innerHTML=SUCCESS;}
+    else{box.classList.remove('success');txt.innerHTML=CH_TEXT[CH.step-1];}
+  }
+
+  /* ------------------------------------------------------------------ actions */
+  var lastLoggedBand=null;
+  function checkAnnotations(prevPods){
+    var pods=totalPods();
+    var etcd=etcdCounts(pods);
+    if(etcd.events>etcd.pods && pods>0 && prevPods<=0){
+      logEv('warn','etcd','events ('+etcd.events.toLocaleString()+') now outnumber pods ('+etcd.pods.toLocaleString()+') — the OpenAI 7.5k-node lesson: move Events to a separate etcd.');
+    }
+  }
+
+  function setNodes(n){ var prev=totalPods(); S.nodes=Math.max(0,Math.min(5000,Math.round(n))); logEv('info','dial','nodes → '+S.nodes.toLocaleString()); render(); checkAnnotations(prev); }
+  function setPodsPerNode(n){ var prev=totalPods(); S.podsPerNode=Math.max(0,Math.min(110,Math.round(n))); logEv('info','dial','pods/node → '+S.podsPerNode); render(); checkAnnotations(prev); }
+  function setWatchClients(n){ S.watchClients=Math.max(0,Math.min(500,Math.round(n))); logEv('info','dial','watch clients → '+S.watchClients); render(); }
+  function setListQps(n){ S.listQps=Math.max(0,Math.min(50,Math.round(n))); logEv('info','dial','list QPS → '+S.listQps); render(); }
+  function setUseWatch(v){
+    S.useWatch=!!v;
+    logEv(S.useWatch?'pass':'warn','mitigation', S.useWatch
+      ? 'controllers switched to WATCH — cost now O(changes), not O(objects)'
+      : 'controllers switched back to full LIST polling — cost is O(objects) again');
+    render();
+  }
+
+  function applyScenario(id){
+    if(id===1){
+      S.nodes=1000; S.podsPerNode=11; S.useWatch=false;
+      logEv('warn','scenario','loaded the live kwok-scale spike shape — ~11,000 pods, LIST mode');
+    } else if(id===2){
+      S.listQps=48;
+      logEv('warn','scenario','list QPS cranked to 48 — watch APF saturation climb');
+    } else if(id===3){
+      S.useWatch=true;
+      logEv('pass','scenario','flipped to WATCH — list cost collapses');
+    }
+    syncInputsFromState();
+    render();
+  }
+  function syncInputsFromState(){
+    $('nodesRange').value=S.nodes;
+    $('podsRange').value=S.podsPerNode;
+    $('watchRange').value=S.watchClients;
+    $('qpsRange').value=S.listQps;
+  }
+
+  /* ------------------------------------------------------------------ controls */
+  $('nodesRange').addEventListener('input',function(e){ setNodes(+e.target.value); });
+  $('podsRange').addEventListener('input',function(e){ setPodsPerNode(+e.target.value); });
+  $('watchRange').addEventListener('input',function(e){ setWatchClients(+e.target.value); });
+  $('qpsRange').addEventListener('input',function(e){ setListQps(+e.target.value); });
+  $('watchToggle').addEventListener('click',function(){ setUseWatch(!S.useWatch); });
+  $('sc1').addEventListener('click',function(){ applyScenario(1); });
+  $('sc2').addEventListener('click',function(){ applyScenario(2); });
+  $('sc3').addEventListener('click',function(){ applyScenario(3); });
+  $('reset').addEventListener('click',function(){ location.reload(); });
+
+  /* ------------------------------------------------------------------ boot */
+  render();
+  logEv('info','ready','scaling envelope up · dials at zero · move nodes/pods to find the knee');
+
+  /* test hook (harmless in production) */
+  window.__scale={
+    S:S, CH:CH,
+    setNodes:setNodes, setPodsPerNode:setPodsPerNode,
+    setWatchClients:setWatchClients, setListQps:setListQps,
+    setUseWatch:setUseWatch, applyScenario:applyScenario,
+    totalPods:totalPods, listLatencySeconds:listLatencySeconds,
+    payloadMB:payloadMB, apiServerP99Ms:apiServerP99Ms,
+    etcdCounts:etcdCounts, watchCacheMB:watchCacheMB, apfSaturationPct:apfSaturationPct,
+    APF_THRESHOLD:APF_THRESHOLD,
+    render:render
+  };
+})();
+</script>
+</body>
+</html>

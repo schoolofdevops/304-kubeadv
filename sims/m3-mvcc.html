@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MVCC Ledger — inside etcd storage</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e; --line2:#1c2740;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  /* fluid type scale: ~12.3px @800w → 16px @≥1750w, floor 10.5px */
+  html{font-size:clamp(10.5px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  header h1 .k8s{color:var(--accent)}
+  #hsub{margin-left:auto;font-family:var(--mono);font-size:.8rem;color:var(--faint);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;min-height:24px;flex:0 0 auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  /* ---------- challenge banner ---------- */
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+  #challenge.success .txt{white-space:normal;line-height:1.3}
+
+  /* ---------- main grid ---------- */
+  #main{flex:1 1 auto;display:grid;grid-template-columns:clamp(238px,21rem,340px) 1fr;gap:6px;min-height:0}
+  #main>.panel{min-width:0}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;min-height:0}
+  .panel h2{font-size:.76rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .panel h2 span{text-transform:none;letter-spacing:0;color:var(--line)}
+
+  /* ---------- keys + maintenance (left) ---------- */
+  #keys{display:flex;flex-direction:column;gap:5px;overflow:hidden}
+  .krow{display:flex;align-items:center;gap:7px;border:1px solid var(--line2);border-radius:8px;
+    background:var(--panel2);padding:3px 8px}
+  .kdot{width:.6rem;height:.6rem;border-radius:50%;background:var(--c);flex:0 0 auto}
+  .knm{font-family:var(--mono);font-size:.88rem;font-weight:600;color:var(--txt);white-space:nowrap}
+  .kst{font-family:var(--mono);font-size:.72rem;color:var(--faint);flex:1;text-align:right;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+  .kst.dead{color:var(--bad)}
+  .kbtn{min-width:3rem;border-radius:6px;border:1px solid var(--line);background:none;color:var(--dim);
+    font-family:var(--mono);font-size:.74rem;font-weight:700;padding:2px 6px;cursor:pointer;flex:0 0 auto}
+  .kbtn:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+  .kbtn.del:hover:not(:disabled){border-color:var(--bad);color:var(--bad)}
+  .kbtn:disabled{opacity:.4;cursor:default}
+  .wide{width:100%;min-height:1.9rem;border-radius:7px;border:1px solid var(--line);background:none;
+    color:var(--txt);font-size:.88rem;font-weight:600;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;gap:6px;transition:border-color .2s,background .2s}
+  .wide:disabled{opacity:.45;cursor:default}
+  .wide code{font-family:var(--mono);font-size:.82rem;color:var(--accent)}
+  #burstBtn:hover:not(:disabled){border-color:var(--warn);background:rgba(245,185,66,.08)}
+  #readBtn:hover:not(:disabled){border-color:var(--ok);background:rgba(61,220,151,.07)}
+  #keys h2.mnt{margin:3px 0 0;border-top:1px dashed var(--line2);padding-top:6px}
+  .crow{display:flex;align-items:center;gap:7px}
+  .crow input[type=range]{flex:1;accent-color:var(--accent);cursor:pointer;height:1rem;min-width:0}
+  .crow .cv{font-family:var(--mono);font-size:.8rem;font-weight:700;color:var(--accent);min-width:4.2ch;text-align:right}
+  #compactBtn:hover:not(:disabled){border-color:var(--accent);background:rgba(76,201,240,.07)}
+  #defragBtn:hover:not(:disabled){border-color:var(--accent2);background:rgba(123,108,246,.08)}
+  #disarmBtn:hover:not(:disabled){border-color:var(--bad);background:rgba(255,107,107,.07)}
+
+  /* ---------- store (right): ledger + file ---------- */
+  #store{display:flex;flex-direction:column;min-height:0;position:relative}
+  #alarmBar{display:none;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:5px;
+    border:1px solid rgba(255,107,107,.55);background:rgba(255,107,107,.1);border-radius:7px;
+    padding:2px 9px;font-family:var(--mono);font-size:.76rem;color:var(--bad);cursor:default;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #alarmBar b{animation:blink 1.2s step-end infinite}
+  @keyframes blink{50%{opacity:.35}}
+  #storeGrid{flex:1;display:grid;grid-template-columns:1fr clamp(6.4rem,8rem,9.5rem);gap:9px;min-height:0}
+  .colh{font-size:.64rem;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);
+    margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+  #ledgerCol,#fileCol{display:flex;flex-direction:column;min-height:0;min-width:0}
+  #ledgerWrap{flex:1;position:relative;min-height:0;display:flex;flex-direction:column;
+    border:1px solid var(--line2);border-radius:8px;background:var(--panel2);padding:5px 6px;overflow:hidden}
+  #ledger{flex:1;display:flex;flex-direction:column;gap:2px;min-height:0;justify-content:flex-end}
+  .blk{border:1px solid var(--c);border-radius:4px;background:color-mix(in srgb,var(--c) 14%,#0e1526);
+    display:flex;align-items:center;gap:7px;padding:0 7px;overflow:hidden;flex:0 0 auto;
+    font-family:var(--mono);font-size:.72rem;color:var(--c);white-space:nowrap;cursor:default}
+  .blk.pop{animation:pop .25s ease-out}
+  @keyframes pop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}
+  .blk .rv{font-weight:700}
+  .blk .sz{margin-left:auto;color:var(--dim)}
+  .blk.old{opacity:.5}
+  .blk.tomb{border-style:dashed;border-color:var(--bad);color:var(--bad);
+    background:rgba(255,107,107,.06);opacity:.85}
+  #floor{display:none;flex:0 0 auto;margin-top:3px;border-radius:4px;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:.68rem;color:var(--faint);padding:2px 6px;cursor:default;
+    background:repeating-linear-gradient(45deg,rgba(90,106,140,.16) 0 5px,rgba(90,106,140,.04) 5px 10px);
+    border:1px dashed var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #replay{position:absolute;left:2px;right:2px;top:0;background:rgba(76,201,240,.06);
+    border-bottom:0;pointer-events:none;border-radius:6px 6px 0 0}
+  #cursor{position:absolute;left:0;right:0;height:18px;margin-top:-9px;cursor:grab;touch-action:none;z-index:5}
+  #cursor:active{cursor:grabbing}
+  #cursor .ln{position:absolute;left:2px;right:2px;top:8px;border-top:2px dashed var(--accent)}
+  #cursor .lb{position:absolute;right:4px;top:-9px;background:#0a0f1c;border:1px solid var(--accent);
+    color:var(--accent);border-radius:6px;padding:1px 7px;font:700 .68rem var(--mono);white-space:nowrap;
+    max-width:calc(100% - 12px);overflow:hidden;text-overflow:ellipsis}
+  #cursor.gone .ln{border-color:var(--bad)}
+  #cursor.gone .lb{border-color:var(--bad);color:var(--bad)}
+  /* file view */
+  #fbar{flex:1;position:relative;border:1px solid var(--line);border-radius:7px;background:var(--panel2);
+    overflow:hidden;min-height:0;cursor:default}
+  #fbar.alarm{border-color:var(--bad);box-shadow:0 0 9px rgba(255,107,107,.4)}
+  #fPhys{position:absolute;left:0;right:0;bottom:0;transition:height .3s;
+    background:repeating-linear-gradient(45deg,rgba(123,108,246,.3) 0 6px,rgba(123,108,246,.1) 6px 12px);
+    border-top:2px solid var(--accent2)}
+  #fUse{position:absolute;left:0;right:0;bottom:0;transition:height .3s;
+    background:linear-gradient(180deg,rgba(76,201,240,.55),rgba(76,201,240,.28));border-top:2px solid var(--accent)}
+  #fQuota{position:absolute;left:0;right:0;border-top:2px dashed var(--bad)}
+  #fQuota i{position:absolute;right:3px;top:1px;font:700 .62rem var(--mono);font-style:normal;color:var(--bad)}
+  .flg{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:.68rem;color:var(--dim);
+    white-space:nowrap;overflow:hidden;cursor:default;margin-top:3px}
+  .flg .sw{width:.75rem;height:.55rem;border-radius:2px;flex:0 0 auto}
+  .flg b{color:var(--txt);font-weight:600;margin-left:auto}
+  #blockOv{display:none;position:absolute;inset:0;z-index:20;border-radius:10px;
+    background:rgba(13,18,32,.82);align-items:center;justify-content:center;text-align:center;
+    font-family:var(--mono);font-size:.9rem;color:var(--warn);padding:10px}
+  #blockOv.on{display:flex;animation:defpulse 1s ease-in-out infinite}
+  @keyframes defpulse{50%{background:rgba(13,18,32,.66)}}
+
+  /* ---------- metrics strip ---------- */
+  #metrics{flex:0 0 auto;display:flex;gap:6px;align-items:stretch}
+  .met{flex:1;background:var(--panel);border:1px solid var(--line2);border-radius:9px;padding:4px 10px;
+    display:flex;align-items:center;gap:9px;min-width:0;position:relative;cursor:help}
+  .met .mv{font-family:var(--mono);font-size:1.3rem;font-weight:700;color:var(--accent);flex:0 0 auto;min-width:3ch;text-align:right}
+  .met.phys .mv{color:var(--accent2)}
+  .met .mn{min-width:0;overflow:hidden}
+  .met .mname{font-family:var(--mono);font-size:.7rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .met .mname i{font-style:normal;color:var(--faint)}
+  .met .msub{font-family:var(--mono);font-size:.66rem;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .met:hover::after,.met:active::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 7px);
+    z-index:40;width:32ch;background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:6px 9px;
+    color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.8rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+  #note{flex:0 0 auto;display:flex;align-items:center;padding:0 8px;color:var(--faint);font-size:1rem;
+    position:relative;cursor:help;border:1px solid var(--line2);border-radius:9px;background:var(--panel)}
+  #note:hover{color:var(--dim)}
+  #note:hover::after,#note:active::after{content:attr(data-tip);position:absolute;right:0;bottom:calc(100% + 7px);
+    z-index:40;width:40ch;background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.82rem/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+
+  /* ---------- event log — read-only stream, deliberately non-interactive ---------- */
+  #events{flex:0 0 clamp(88px,7.8rem,136px);display:flex;flex-direction:column;min-height:0}
+  #events,#events *{cursor:default}
+  #evList{flex:1;overflow-y:auto;font-family:var(--mono);font-size:.78rem;line-height:1.65;scrollbar-width:thin}
+  .ev{display:flex;gap:8px;white-space:nowrap;overflow:hidden}
+  .ev .et{color:var(--faint);flex:0 0 2.6rem}
+  .ev .er{flex:0 0 9.4rem;overflow:hidden;text-overflow:ellipsis;color:var(--ok)}
+  .ev.warn .er{color:var(--bad)}
+  .ev.info .er{color:var(--accent2)}
+  .ev .eo{flex:0 0 13rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+  .ev .em{flex:1;color:var(--txt);opacity:.85;overflow:hidden;text-overflow:ellipsis}
+  .ev.new{animation:evin .4s ease-out}
+  @keyframes evin{0%{background:rgba(76,201,240,.12)}100%{background:transparent}}
+
+  /* narrow fallback: stack + allow scroll rather than clip */
+  @media (max-width:620px){
+    body{overflow:auto}
+    #main{grid-template-columns:1fr}
+    #app{height:auto;min-height:100%}
+    #ledgerWrap{min-height:16rem}
+    .ev .eo{flex-basis:9rem}.ev .er{flex-basis:8rem}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1><span class="k8s">⛁</span> etcd MVCC Ledger</h1>
+    <span id="hsub">writes append revisions · compact trims history · only defrag returns disk</span>
+    <button id="reset" title="Reset the simulator">↺ Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Try this</span>
+    <span class="steps">
+      <span class="dot" id="d1">1</span><span class="dot" id="d2">2</span><span class="dot" id="d3">3</span>
+    </span>
+    <span class="txt" id="chTxt"></span>
+  </div>
+
+  <div id="main">
+    <div class="panel" id="keys">
+      <h2>Keyspace <span>· /registry/configmaps/app/…</span></h2>
+      <div id="keyRows"></div>
+      <button class="wide" id="burstBtn"
+        title="Bounded junk fill — 10 PUTs of 64 KB each, round-robin across the keys. Fixed count, never an unbounded loop: the same rule the lab enforces.">
+        ⚡ Junk fill <code>×10 PUT</code> (bounded)</button>
+      <button class="wide" id="readBtn"
+        title="etcdctl get /registry/configmaps/app --prefix — a range read. Works even while the NOSPACE alarm rejects every write.">
+        ⬇ <code>etcdctl get --prefix</code> (read)</button>
+      <h2 class="mnt">Maintenance <span>· recovery tools</span></h2>
+      <div class="crow" title="Pick the revision to compact to — history OLDER than this revision is discarded.">
+        <input type="range" id="cSlider" min="1" max="6" value="6" aria-label="compact target revision">
+        <span class="cv">rev <span id="cVal">6</span></span>
+      </div>
+      <button class="wide" id="compactBtn"
+        title="etcdctl compact N — discards superseded versions and tombstones older than rev N. Frees LOGICAL space only; the file on disk does not shrink.">
+        ✂ <code>etcdctl compact</code> <span id="cBtnN">rev 6</span></button>
+      <button class="wide" id="defragBtn"
+        title="etcdctl defrag — rewrites the bbolt file to release free pages back to the OS. The member is briefly BLOCKED and serves nothing while it runs.">
+        ◲ <code>etcdctl defrag</code></button>
+      <button class="wide" id="disarmBtn"
+        title="etcdctl alarm disarm — clears the NOSPACE alarm. Only sticks once compact + defrag have brought the file back under quota.">
+        🔕 <code>etcdctl alarm disarm</code></button>
+    </div>
+
+    <div class="panel" id="store">
+      <h2>etcd storage <span>· one bbolt file, every write appends</span></h2>
+      <div id="alarmBar" title="etcd raised the NOSPACE alarm: the database file hit --quota-backend-bytes. The cluster is read-only for writes until you compact, defrag, and disarm.">
+        <b>⛔ ALARM NOSPACE</b><span>— mvcc: database space exceeded · writes rejected · reads &amp; watches still served</span>
+      </div>
+      <div id="storeGrid">
+        <div id="ledgerCol">
+          <div class="colh" title="The revision ledger: newest at the top. Grey = superseded old versions, dashed red = tombstones.">revision ledger — newest on top</div>
+          <div id="ledgerWrap">
+            <div id="replay"></div>
+            <div id="ledger"></div>
+            <div id="floor" title="The compaction floor: revisions older than this are gone forever. Any watch asking to start below it gets 410 Gone."></div>
+            <div id="cursor" title="Drag me — a watch client attached at this revision. Everything above the line is history etcd replays to it.">
+              <span class="ln"></span><span class="lb" id="curLbl"></span>
+            </div>
+          </div>
+        </div>
+        <div id="fileCol">
+          <div class="colh" title="The physical bbolt file vs the bytes actually holding live data.">db file vs quota</div>
+          <div id="fbar">
+            <span id="fQuota"><i id="fQuotaLbl"></i></span>
+            <span id="fPhys" title="Physical file size — what the quota is compared against. Compaction does NOT shrink this; only defrag does."></span>
+            <span id="fUse" title="Logical in-use bytes — live revisions. Compaction shrinks this."></span>
+          </div>
+          <div class="flg" title="etcd_mvcc_db_total_size_in_bytes — the file on disk"><span class="sw" style="background:var(--accent2)"></span>physical<b id="lgPhys"></b></div>
+          <div class="flg" title="etcd_mvcc_db_total_size_in_use_in_bytes — live data"><span class="sw" style="background:var(--accent)"></span>in-use<b id="lgUse"></b></div>
+          <div class="flg" title="--quota-backend-bytes — the hard ceiling; crossing it raises NOSPACE"><span class="sw" style="background:var(--bad)"></span>quota<b id="lgQuota"></b></div>
+        </div>
+      </div>
+      <div id="blockOv">⏸ etcd member blocked —<br>defragmenting bbolt file…<br><span style="font-size:.72rem;color:var(--faint)">defrag pauses serving; run it one member at a time</span></div>
+    </div>
+  </div>
+
+  <div id="metrics">
+    <div class="met phys" id="metPhys"
+      data-tip="etcd_mvcc_db_total_size_in_bytes — the bbolt file on disk including free pages. This is what --quota-backend-bytes compares against. Only defrag shrinks it. Same metric the lab's Storage lens streams.">
+      <span class="mv" id="mPhys">0</span>
+      <span class="mn"><span class="mname"><i>etcd_mvcc_</i>db_total_size_in_bytes</span>
+        <span class="msub" id="mPhysSub"></span></span>
+    </div>
+    <div class="met" id="metUse"
+      data-tip="etcd_mvcc_db_total_size_in_use_in_bytes — bytes holding live data. Compaction lowers this; the gap up to total size is fragmentation that only defrag reclaims.">
+      <span class="mv" id="mUse">0</span>
+      <span class="mn"><span class="mname"><i>etcd_mvcc_</i>db_total_size_in_use_in_bytes</span>
+        <span class="msub" id="mUseSub"></span></span>
+    </div>
+    <div class="met" id="metRev"
+      data-tip="etcd_debugging_mvcc_current_revision — the cluster-wide MVCC counter. Every write bumps it by one; it is the number behind every resourceVersion you inspected in M2.">
+      <span class="mv" id="mRev">0</span>
+      <span class="mn"><span class="mname"><i>etcd_debugging_mvcc_</i>current_revision</span>
+        <span class="msub" id="mRevSub"></span></span>
+    </div>
+    <span id="note"
+      data-tip="Honest-model note: sizes are scaled ~170× down (real default quota is 2 GB; your lab cluster uses 256 MB) so the ledger stays readable. Real compaction runs incrementally and defrag can take seconds per GB while the member serves nothing. Real watches attach at rev+1 and receive 'required revision has been compacted'; client informers surface it as 410 Gone and re-list.">ⓘ</span>
+  </div>
+
+  <div class="panel" id="events">
+    <h2>Events <span>— what etcdctl and the apiserver would tell you</span></h2>
+    <div id="evList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id)};
+
+  /* ------------------------------------------------------------------ model
+     sizes in KB. put=64, tombstone=8, quota=1600.
+     physical file only ever grows with writes (bbolt high-water mark);
+     compact frees LOGICAL bytes; defrag sets physical := in-use.        */
+  var PUT_KB=64, TOMB_KB=8;
+  var KEYS=[
+    {id:'a',name:'cfg-a',color:'var(--accent)', deleted:false,latest:0},
+    {id:'b',name:'cfg-b',color:'var(--accent2)',deleted:false,latest:0},
+    {id:'c',name:'cfg-c',color:'var(--ok)',     deleted:false,latest:0},
+    {id:'d',name:'cfg-d',color:'var(--warn)',   deleted:false,latest:0}
+  ];
+  var KEY={}; KEYS.forEach(function(k){KEY[k.id]=k});
+  function path(k){return '/registry/configmaps/app/'+KEY[k].name}
+  var S={rev:0, revs:[], compacted:1, inUse:0, physical:0, quota:1600,
+         alarm:false, blocked:false, cursor:1, pending:[], burstQuiet:false, t0:Date.now()};
+  var CH={step:1, done:[false,false,false]};
+
+  /* ------------------------------------------------------------------ events log */
+  var evList=$('evList');
+  function clock(){var s=Math.floor((Date.now()-S.t0)/1000);return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+  function logEv(kind,reason,obj,msg){
+    var d=document.createElement('div');
+    d.className='ev new '+(kind==='Warning'?'warn':kind==='Info'?'info':'');
+    d.innerHTML='<span class="et">'+clock()+'</span><span class="er">'+reason+
+      '</span><span class="eo">'+obj+'</span><span class="em"></span>';
+    d.lastChild.textContent=msg; d.title=reason+'  '+obj+'  —  '+msg;
+    evList.appendChild(d);
+    while(evList.children.length>90)evList.removeChild(evList.firstChild);
+    evList.scrollTop=evList.scrollHeight;
+  }
+
+  function fmt(kb){return kb>=1024?(kb/1024).toFixed(1).replace(/\.0$/,'')+' MB':kb+' KB'}
+
+  /* ------------------------------------------------------------------ writes */
+  function checkQuota(){
+    if(!S.alarm&&S.physical>=S.quota){
+      S.alarm=true;
+      logEv('Warning','AlarmNOSPACE','member/etcd-0',
+        'db size '+fmt(S.physical)+' ≥ quota '+fmt(S.quota)+' — alarm raised, ALL writes rejected (reads & watches still served)');
+    }
+  }
+  function put(k){
+    if(S.blocked){logEv('Warning','Rejected',path(k),'context deadline exceeded — member blocked (defrag in progress)');return false}
+    if(S.alarm){
+      logEv('Warning','Rejected',path(k),'put rejected — etcdserver: mvcc: database space exceeded (alarm NOSPACE)');
+      return false;
+    }
+    var key=KEY[k];
+    S.revs.forEach(function(r){if(r.key===k)r.live=false});
+    S.rev++;
+    S.revs.push({rev:S.rev,key:k,size:PUT_KB,tomb:false,live:true});
+    key.deleted=false; key.latest=S.rev;
+    S.inUse+=PUT_KB; if(S.inUse>S.physical)S.physical=S.inUse;
+    if(!S.burstQuiet)logEv('Normal','Put',path(k),'rev '+S.rev+' · +'+PUT_KB+' KB · in-use '+fmt(S.inUse));
+    checkQuota(); render(); return true;
+  }
+  function del(k){
+    var key=KEY[k];
+    if(S.blocked||S.alarm||key.deleted)return false;
+    S.revs.forEach(function(r){if(r.key===k)r.live=false});
+    S.rev++;
+    S.revs.push({rev:S.rev,key:k,size:TOMB_KB,tomb:true,live:false});
+    key.deleted=true; key.latest=S.rev;
+    S.inUse+=TOMB_KB; if(S.inUse>S.physical)S.physical=S.inUse;
+    logEv('Normal','Delete',path(k),'tombstone rev '+S.rev+' — delete is just one more revision, history above it remains');
+    checkQuota(); render(); return true;
+  }
+  function burst(){
+    if(S.alarm||S.blocked||S.pending.length)return;
+    logEv('Normal','JunkFill','namespace/junk','bounded fill: 10 × '+PUT_KB+' KB PUTs queued (fixed count — never an unbounded loop)');
+    for(var i=0;i<10;i++)S.pending.push(KEYS[i%KEYS.length].id);
+  }
+  function doRead(){
+    if(S.blocked){logEv('Warning','Get','/registry/configmaps/app','context deadline exceeded — member blocked (defrag in progress)');return false}
+    var live=KEYS.filter(function(k){return !k.deleted}).length;
+    logEv('Normal','Get','/registry/configmaps/app','get --prefix → '+live+' keys @ rev '+S.rev+' — OK'+
+      (S.alarm?' (NOSPACE stops writes, not reads)':''));
+    if(S.alarm&&CH.step===1){CH.done[0]=true;CH.step=2;
+      logEv('Info','ChallengeStep','try-this/step-1','Reads answered under NOSPACE. Now recover — in the right order.');}
+    render(); return true;
+  }
+
+  /* ------------------------------------------------------------------ maintenance */
+  function doCompact(n){
+    if(S.blocked)return false;
+    n=Math.max(1,Math.min(S.rev,Math.round(n!=null?n:+$('cSlider').value)));
+    if(n<=S.compacted){
+      logEv('Warning','Compacted','keyspace/history','etcdctl compact '+n+' — mvcc: required revision has been compacted (floor is already '+S.compacted+')');
+      return false;
+    }
+    var swept=0,kb=0;
+    S.revs=S.revs.filter(function(r){
+      if(r.rev>=n)return true;
+      if(r.live&&!r.tomb)return true;      /* current version of a live key survives */
+      swept++; kb+=r.size; return false;
+    });
+    S.inUse-=kb; S.compacted=n;
+    logEv('Normal','Compacted','keyspace/history','etcdctl compact '+n+' — '+swept+' old revisions swept, in-use '+
+      fmt(S.inUse)+' · file size UNCHANGED at '+fmt(S.physical));
+    if(S.cursor<n){
+      logEv('Warning','WatchCancel','watch/ledger','watch from rev '+S.cursor+' — required revision has been compacted; client re-lists, watch re-attached @ rev '+S.rev);
+      S.cursor=S.rev;
+    }
+    render(); return true;
+  }
+  function doDefrag(){
+    if(S.blocked)return false;
+    S.blocked=true; $('blockOv').classList.add('on');
+    logEv('Normal','Defragmenting','member/etcd-0','defrag started — member BLOCKED: serving neither reads nor writes');
+    render();
+    setTimeout(function(){
+      var before=S.physical;
+      S.physical=S.inUse;
+      S.blocked=false; $('blockOv').classList.remove('on');
+      logEv('Normal','Defragmented','member/etcd-0','db size '+fmt(before)+' → '+fmt(S.physical)+' — free pages returned to the OS');
+      render();
+    },1400);
+    return true;
+  }
+  function doDisarm(){
+    if(S.blocked||!S.alarm)return false;
+    if(S.physical>=S.quota){
+      logEv('Warning','AlarmNOSPACE','member/etcd-0','disarm refused — db still '+fmt(S.physical)+' ≥ quota '+
+        fmt(S.quota)+'. Compact trims history, but only DEFRAG shrinks the file.');
+      return false;
+    }
+    S.alarm=false;
+    logEv('Normal','AlarmDisarmed','member/etcd-0','alarm disarmed — writes re-enabled @ rev '+S.rev);
+    if(CH.step===1){CH.done[0]=true;CH.done[1]=true;CH.step=3;}   /* forgiving: alarm clearly experienced */
+    else if(CH.step===2){CH.done[1]=true;CH.step=3;
+      logEv('Info','ChallengeStep','try-this/step-2','Recovered in the only order that works: compact → defrag → disarm.');}
+    render(); return true;
+  }
+
+  /* ------------------------------------------------------------------ watch cursor */
+  function setCursor(rev,fromDrag){
+    rev=Math.max(1,Math.min(S.rev,Math.round(rev)));
+    if(rev===S.cursor){render();return}
+    var was=S.cursor<S.compacted;
+    S.cursor=rev;
+    var gone=rev<S.compacted;
+    if(gone&&!was){
+      logEv('Warning','WatchCancel','watch/ledger','watch from rev '+rev+' < floor '+S.compacted+
+        ' — required revision has been compacted → 410 Gone, client must re-list (your M2 informer did exactly this)');
+      if(fromDrag&&CH.step===3){CH.done[2]=true;CH.step=4;
+        logEv('Info','ChallengeStep','try-this/step-3','History has a floor. Below it: 410 Gone and a full re-list — the cost side of compaction.');}
+    }
+    render();
+  }
+  (function drag(){
+    var cur=$('cursor'),led=$('ledger'),fl=$('floor');
+    function revFromY(y){
+      var blocks=led.children;
+      if(!blocks.length)return S.rev;
+      if(fl.style.display!=='none'){
+        var fr=fl.getBoundingClientRect();
+        if(y>fr.top)return S.compacted-1;      /* dropped into the compacted floor */
+      }
+      var best=S.rev,bd=1e9;
+      for(var i=0;i<blocks.length;i++){
+        var r=blocks[i].getBoundingClientRect(),m=(r.top+r.bottom)/2,d=Math.abs(y-m);
+        if(d<bd){bd=d;best=+blocks[i].dataset.rev}
+      }
+      return best;
+    }
+    cur.addEventListener('pointerdown',function(e){
+      cur.setPointerCapture(e.pointerId); e.preventDefault();
+      function mv(ev){setCursor(revFromY(ev.clientY),true)}
+      function up(ev){cur.releasePointerCapture(ev.pointerId);
+        cur.removeEventListener('pointermove',mv);cur.removeEventListener('pointerup',up)}
+      cur.addEventListener('pointermove',mv);
+      cur.addEventListener('pointerup',up);
+    });
+  })();
+
+  /* ------------------------------------------------------------------ key rows DOM */
+  var kEls={};
+  (function buildKeys(){
+    var box=$('keyRows');
+    KEYS.forEach(function(k){
+      var d=document.createElement('div');
+      d.className='krow'; d.style.setProperty('--c',k.color);
+      d.innerHTML='<span class="kdot"></span><span class="knm">'+k.name+'</span>'+
+        '<span class="kst"></span>'+
+        '<button class="kbtn put" title="etcdctl put '+path(k.id)+' — appends a new '+PUT_KB+' KB revision. The old value is NOT overwritten.">PUT</button>'+
+        '<button class="kbtn del" title="etcdctl del '+path(k.id)+' — writes a small tombstone revision. Nothing is erased until compaction.">DEL</button>';
+      d.title=path(k.id);
+      box.appendChild(d);
+      d.querySelector('.put').addEventListener('click',function(){put(k.id)});
+      d.querySelector('.del').addEventListener('click',function(){del(k.id)});
+      kEls[k.id]={st:d.querySelector('.kst'),put:d.querySelector('.put'),del:d.querySelector('.del')};
+    });
+  })();
+
+  /* ------------------------------------------------------------------ render */
+  var lastAnimRev=0;
+  function renderLedger(){
+    var led=$('ledger'),fl=$('floor');
+    fl.style.display=S.compacted>1?'flex':'none';
+    if(S.compacted>1)fl.textContent='⌁ compacted @ rev '+S.compacted+' — older history gone · watch below ⇒ 410';
+    led.innerHTML='';
+    var n=S.revs.length;
+    if(!n)return;
+    var avail=led.clientHeight||100;
+    var h=Math.max(7,Math.min(24,Math.floor(avail/n)-2));
+    for(var i=n-1;i>=0;i--){
+      var r=S.revs[i],k=KEY[r.key];
+      var b=document.createElement('div');
+      b.className='blk'+(r.tomb?' tomb':(r.live?'':' old'))+(r.rev>lastAnimRev?' pop':'');
+      b.style.setProperty('--c',k.color);
+      b.style.height=h+'px';
+      b.dataset.rev=r.rev;
+      if(h>=13)b.innerHTML='<span class="rv">rev '+r.rev+'</span><span>'+k.name+(r.tomb?' ⌫':'')+
+        '</span><span class="sz">'+(r.tomb?'tombstone':r.size+'K')+'</span>';
+      b.title='rev '+r.rev+' · '+path(r.key)+' · '+(r.tomb?'tombstone (delete marker), '+r.size+' KB'
+        :r.size+' KB · '+(r.live?'current version':'superseded — reclaimable by compaction'));
+      led.appendChild(b);
+    }
+    lastAnimRev=S.rev;
+  }
+  function positionCursor(){
+    var wrap=$('ledgerWrap'),led=$('ledger'),cur=$('cursor'),rep=$('replay'),lbl=$('curLbl'),fl=$('floor');
+    var blocks=led.children;
+    if(!blocks.length){cur.style.display='none';rep.style.display='none';return}
+    cur.style.display='block';
+    var gone=S.cursor<S.compacted;
+    cur.classList.toggle('gone',gone);
+    var y;
+    if(gone){
+      y=(fl.style.display!=='none'?fl.offsetTop:led.offsetTop+led.offsetHeight)-2;
+      lbl.textContent='⚠ watch rev '+S.cursor+' < floor '+S.compacted+' → 410 Gone · re-list required';
+      rep.style.display='none';
+    }else{
+      var tgt=null;
+      for(var i=blocks.length-1;i>=0;i--){          /* oldest→newest: first block with rev ≥ cursor */
+        if(+blocks[i].dataset.rev>=S.cursor){tgt=blocks[i];break}
+      }
+      if(!tgt)tgt=blocks[0];
+      y=led.offsetTop+tgt.offsetTop+tgt.offsetHeight+1;
+      var cnt=0;
+      for(var j=0;j<blocks.length;j++)if(+blocks[j].dataset.rev>=S.cursor)cnt++;
+      lbl.textContent='◀ watch from rev '+S.cursor+' · replaying '+cnt+' event'+(cnt===1?'':'s');
+      rep.style.display='block'; rep.style.height=Math.max(0,y-2)+'px';
+    }
+    cur.style.top=y+'px';
+  }
+  function render(){
+    KEYS.forEach(function(k){
+      var e=kEls[k.id];
+      e.st.textContent=k.deleted?'deleted @ '+k.latest:(k.latest?'@ rev '+k.latest:'—');
+      e.st.classList.toggle('dead',k.deleted);
+      e.put.disabled=S.alarm||S.blocked;
+      e.del.disabled=S.alarm||S.blocked||k.deleted;
+    });
+    var sl=$('cSlider');
+    sl.max=S.rev;
+    if(!S.slTouched)sl.value=S.rev;          /* follow latest rev until the user picks a target */
+    else if(+sl.value>S.rev)sl.value=S.rev;
+    $('cVal').textContent=sl.value; $('cBtnN').textContent='rev '+sl.value;
+    $('burstBtn').disabled=S.alarm||S.blocked||S.pending.length>0;
+    $('readBtn').disabled=S.blocked;
+    $('compactBtn').disabled=S.blocked;
+    $('defragBtn').disabled=S.blocked;
+    $('disarmBtn').disabled=!S.alarm||S.blocked;
+    $('alarmBar').style.display=S.alarm?'flex':'none';
+    $('fbar').classList.toggle('alarm',S.alarm);
+    /* file bar */
+    var scale=Math.max(S.quota*1.18,S.physical*1.02);
+    $('fPhys').style.height=(S.physical/scale*100)+'%';
+    $('fUse').style.height=(S.inUse/scale*100)+'%';
+    $('fQuota').style.bottom=(S.quota/scale*100)+'%';
+    $('fQuotaLbl').textContent='quota '+fmt(S.quota);
+    $('lgPhys').textContent=fmt(S.physical);
+    $('lgUse').textContent=fmt(S.inUse);
+    $('lgQuota').textContent=fmt(S.quota);
+    /* metrics */
+    $('mPhys').textContent=fmt(S.physical).replace(' ','');
+    $('mPhysSub').textContent=(S.physical*1024).toLocaleString('en-US')+' B · '+Math.round(S.physical/S.quota*100)+'% of quota'+(S.alarm?' · ALARM':'');
+    $('mUse').textContent=fmt(S.inUse).replace(' ','');
+    $('mUseSub').textContent=(S.inUse*1024).toLocaleString('en-US')+' B · frag '+fmt(Math.max(0,S.physical-S.inUse));
+    $('mRev').textContent=S.rev;
+    $('mRevSub').textContent='compact floor rev '+S.compacted+' · watch @ rev '+S.cursor;
+    renderLedger(); positionCursor(); updateChallenge();
+  }
+
+  /* ------------------------------------------------------------------ challenge */
+  var CH_TEXT=[
+    'Step 1 — <code>Junk fill</code> until the file hits quota and <code>NOSPACE</code> trips. Writes die — now run <code>etcdctl get</code>: reads still answer.',
+    'Step 2 — Try <code>alarm disarm</code> first and watch it refuse. Then recover in the only order that works: <code>compact</code> → <code>defrag</code> → <code>disarm</code>.',
+    'Step 3 — Drag the watch cursor below the compaction floor: <code>410 Gone</code> — the exact re-list your informer performed in M2.'
+  ];
+  var SUCCESS='Challenge complete! Every write appends a revision and a delete is just a tombstone. <b>Compaction</b> trims history — in-use drops, the file does not. Only <b>defrag</b> returns bytes to the OS, and <b>NOSPACE</b> stays raised until you make room and disarm. In the lab you run this exact <code>etcdctl</code> sequence to recover your own course cluster.';
+  function updateChallenge(){
+    for(var i=1;i<=3;i++){
+      var d=$('d'+i); d.className='dot'+(CH.done[i-1]?' done':CH.step===i?' cur':'');
+      d.textContent=CH.done[i-1]?'✓':i;
+    }
+    var box=$('challenge'),txt=$('chTxt');
+    if(CH.step===4){box.classList.add('success');txt.innerHTML=SUCCESS;}
+    else txt.innerHTML=CH_TEXT[CH.step-1];
+  }
+
+  /* ------------------------------------------------------------------ controls */
+  $('burstBtn').addEventListener('click',burst);
+  $('readBtn').addEventListener('click',doRead);
+  $('compactBtn').addEventListener('click',function(){doCompact()});
+  $('defragBtn').addEventListener('click',doDefrag);
+  $('disarmBtn').addEventListener('click',doDisarm);
+  $('cSlider').addEventListener('input',function(){
+    S.slTouched=true;
+    $('cVal').textContent=this.value; $('cBtnN').textContent='rev '+this.value;
+  });
+  $('reset').addEventListener('click',function(){location.reload()});
+  window.addEventListener('resize',render);
+
+  /* ------------------------------------------------------------------ engine: drains bounded junk-fill queue */
+  setInterval(function(){
+    if(!S.pending.length)return;
+    var k=S.pending.shift();
+    S.burstQuiet=true; var ok=put(k); S.burstQuiet=false;
+    if(!ok&&S.alarm){
+      var nrej=S.pending.length+1; S.pending=[];
+      logEv('Warning','Rejected','namespace/junk','put ×'+nrej+' rejected — etcdserver: mvcc: database space exceeded');
+      render();
+    }else if(!S.pending.length&&ok){
+      logEv('Normal','JunkFill','namespace/junk','fill batch done — db '+fmt(S.physical)+' of '+fmt(S.quota)+' quota');
+    }
+  },110);
+
+  /* ------------------------------------------------------------------ boot: seed history so the ledger tells a story */
+  S.burstQuiet=true;
+  put('a');put('b');put('c');put('d');put('a');put('b');
+  S.burstQuiet=false;
+  S.cursor=4;
+  logEv('Info','SimulatorReady','member/etcd-0',
+    'bbolt file open · quota '+fmt(S.quota)+' · rev '+S.rev+' — every write appends, nothing overwrites.');
+  render();
+
+  /* test hook (harmless in production) */
+  window.__mvcc={S:S,CH:CH,KEYS:KEYS,put:put,del:del,burst:burst,doRead:doRead,
+    doCompact:doCompact,doDefrag:doDefrag,doDisarm:doDisarm,setCursor:setCursor,fmt:fmt};
+})();
+</script>
+</body>
+</html>

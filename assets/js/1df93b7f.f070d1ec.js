@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkcoursesmith_site=self.webpackChunkcoursesmith_site||[]).push([["9452"],{5146(s,e,t){t.r(e),t.d(e,{default:()=>i});var r=t(4848);t(6540);var u=t(6347),c=t(6497);function i(){return(0,r.jsx)(u.rd,{to:(0,c.Ay)("/docs/intro")})}}}]);
