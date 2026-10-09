@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DRA Allocation & Kueue Admission Simulator</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(11px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650}
+  header h1 .k8s{color:var(--accent)}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;margin-left:auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+
+  #main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+    display:flex;flex-direction:column;overflow:hidden}
+  .card h2{font-size:.85rem;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+  /* GPU grid */
+  .gpu-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;flex:1;min-height:0;overflow-y:auto}
+  .gpu-slot{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 7px;
+    font-size:.78rem;text-align:center;transition:all .25s}
+  .gpu-slot .name{font-weight:700;font-family:var(--mono);font-size:.82rem;margin-bottom:2px}
+  .gpu-slot .attr{color:var(--faint);font-size:.72rem}
+  .gpu-slot.available{border-color:var(--line)}
+  .gpu-slot.allocated{border-color:var(--ok);background:rgba(61,220,151,.08)}
+  .gpu-slot.allocated .name{color:var(--ok)}
+  .gpu-slot.matched{border-color:var(--accent);background:rgba(76,201,240,.08)}
+  .gpu-slot.matched .name{color:var(--accent)}
+  .gpu-slot.no-match{border-color:var(--bad);background:rgba(255,107,107,.05);opacity:.5}
+
+  /* Kueue queue */
+  .queue-view{flex:1;display:flex;flex-direction:column;gap:6px;overflow-y:auto;min-height:0}
+  .queue-header{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.8rem}
+  .queue-header .label{color:var(--dim)}
+  .queue-header .quota{color:var(--accent)}
+  .job-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;
+    background:var(--panel2);border:1px solid var(--line);font-size:.82rem;transition:all .25s}
+  .job-row .job-name{font-family:var(--mono);font-weight:600;min-width:110px}
+  .job-row .job-cpu{font-family:var(--mono);color:var(--accent);font-size:.78rem}
+  .job-row .job-priority{font-size:.76rem;padding:1px 6px;border-radius:4px;text-transform:uppercase;font-weight:600}
+  .job-row .job-priority.low{color:var(--faint);background:rgba(90,106,140,.15)}
+  .job-row .job-priority.high{color:var(--warn);background:rgba(245,185,66,.12)}
+  .job-row .job-status{margin-left:auto;font-family:var(--mono);font-size:.78rem;font-weight:600}
+  .job-row .job-status.admitted{color:var(--ok)}
+  .job-row .job-status.suspended{color:var(--warn)}
+  .job-row .job-status.preempted{color:var(--bad)}
+
+  /* Event log */
+  #events{overflow-y:auto}
+  #events .ev{font-family:var(--mono);font-size:.78rem;padding:2px 4px;border-radius:3px;margin-bottom:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #events .ev.alloc{color:var(--ok);background:rgba(61,220,151,.06)}
+  #events .ev.pending{color:var(--warn);background:rgba(245,185,66,.06)}
+  #events .ev.info{color:var(--accent);background:rgba(76,201,240,.06)}
+  #events .ev.preempt{color:var(--bad);background:rgba(255,107,107,.06)}
+
+  #controls{grid-column:1/3;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:5px 12px;font-size:.85rem;cursor:pointer;transition:all .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  #status{font-family:var(--mono);font-size:.82rem;color:var(--dim);margin-left:auto}
+
+  /* Claim YAML panel */
+  .claim-yaml{font-family:var(--mono);font-size:.76rem;color:var(--faint);white-space:pre;
+    background:var(--panel2);border-radius:4px;padding:4px 8px;overflow-x:auto;margin-top:4px;
+    border:1px solid var(--line);max-height:120px;overflow-y:auto}
+  .claim-yaml .highlight{color:var(--accent)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span class="k8s">K8s</span> DRA &amp; Kueue Sim</h1>
+    <button id="reset">Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Challenge</span>
+    <div class="steps" id="dots"></div>
+    <span class="txt" id="goal"></span>
+  </div>
+
+  <div id="main">
+    <div class="card" id="device-panel">
+      <h2>Node: worker-1 — GPU Inventory</h2>
+      <div class="gpu-grid" id="gpu-grid"></div>
+    </div>
+    <div class="card" id="queue-panel" style="display:none">
+      <h2>ClusterQueue: team-queue</h2>
+      <div class="queue-view" id="queue-view"></div>
+    </div>
+    <div class="card" id="events">
+      <h2>Events</h2>
+    </div>
+    <div id="controls"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const GPUS = Array.from({length:8}, (_,i) => ({
+    name: `gpu-${i}`,
+    model: i < 6 ? 'A100' : 'T4',
+    memory: i < 6 ? '80Gi' : '16Gi',
+    uuid: `GPU-${Math.random().toString(36).slice(2,8)}`,
+    status: 'available'
+  }));
+
+  const CHALLENGES = [
+    {goal:'Request 1 GPU (any model) via ResourceClaim',
+     steps:['create-claim','allocate','observe'],type:'dra',
+     claim:{count:1,selector:null,label:'single-gpu'}},
+    {goal:'Request 2 A100 GPUs with CEL selector',
+     steps:['create-claim','allocate','observe'],type:'dra',
+     claim:{count:2,selector:'device.attributes["gpu.example.com"].model == "A100"',label:'training-gpus'}},
+    {goal:'Request a GPU with memory ≥ 128Gi — no match exists',
+     steps:['create-claim','try-allocate'],type:'dra-fail',
+     claim:{count:1,selector:'device.capacity["gpu.example.com"].memory.isGreaterThan(quantity("128Gi"))',label:'huge-gpu'}},
+    {goal:'Submit Jobs to Kueue — observe quota & suspension',
+     steps:['setup-kueue','submit-low','submit-overflow','observe-suspended'],type:'kueue'},
+    {goal:'High-priority Job preempts low-priority',
+     steps:['submit-urgent','observe-preemption'],type:'kueue-preempt'},
+  ];
+
+  let state = {challenge:0, step:0, events:[], gpus:GPUS.map(g=>({...g})),
+               allocated:[], jobs:[], quotaUsed:0, quotaTotal:4};
+
+  function resetGPUs(){
+    state.gpus = GPUS.map(g=>({...g}));
+    state.allocated = [];
+  }
+
+  function render(){
+    renderChallenge();
+    renderGPUs();
+    renderQueue();
+    renderEvents();
+    renderControls();
+  }
+
+  function renderChallenge(){
+    const ch = CHALLENGES[state.challenge];
+    const dots = document.getElementById('dots');
+    const goal = document.getElementById('goal');
+    const el = document.getElementById('challenge');
+    dots.innerHTML = ch.steps.map((_,i)=>{
+      const cls = i < state.step ? 'dot done' : i === state.step ? 'dot cur' : 'dot';
+      return `<div class="${cls}">${i+1}</div>`;
+    }).join('');
+    goal.innerHTML = `<code>${state.challenge+1}/${CHALLENGES.length}</code> ${ch.goal}`;
+    el.className = state.step >= ch.steps.length ? 'success' : '';
+  }
+
+  function renderGPUs(){
+    const panel = document.getElementById('device-panel');
+    const ch = CHALLENGES[state.challenge];
+    panel.style.display = ch.type.startsWith('kueue') ? 'none' : '';
+    const grid = document.getElementById('gpu-grid');
+    grid.innerHTML = state.gpus.map(g => {
+      const cls = g.status === 'allocated' ? 'gpu-slot allocated' :
+                  g.status === 'matched' ? 'gpu-slot matched' :
+                  g.status === 'no-match' ? 'gpu-slot no-match' : 'gpu-slot available';
+      return `<div class="${cls}">
+        <div class="name">${g.name}</div>
+        <div class="attr">${g.model} · ${g.memory}</div>
+        <div class="attr" style="font-size:.68rem">${g.status}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderQueue(){
+    const panel = document.getElementById('queue-panel');
+    const ch = CHALLENGES[state.challenge];
+    panel.style.display = ch.type.startsWith('kueue') ? '' : 'none';
+    if(!ch.type.startsWith('kueue')) return;
+    const view = document.getElementById('queue-view');
+    let html = `<div class="queue-header">
+      <span class="label">ClusterQueue: team-queue</span>
+      <span class="quota">CPU: ${state.quotaUsed}/${state.quotaTotal} used</span>
+    </div>`;
+    html += state.jobs.map(j => {
+      const stCls = j.status === 'Admitted' ? 'admitted' :
+                    j.status === 'Suspended' ? 'suspended' : 'preempted';
+      const priCls = j.priority === 'high' ? 'high' : 'low';
+      return `<div class="job-row">
+        <span class="job-name">${j.name}</span>
+        <span class="job-cpu">cpu: ${j.cpu}</span>
+        <span class="job-priority ${priCls}">${j.priority}</span>
+        <span class="job-status ${stCls}">${j.status}</span>
+      </div>`;
+    }).join('');
+    view.innerHTML = html;
+  }
+
+  function renderEvents(){
+    const el = document.getElementById('events');
+    el.innerHTML = '<h2>Events</h2>' + state.events.map(e =>
+      `<div class="ev ${e.type}">${e.text}</div>`
+    ).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function renderControls(){
+    const el = document.getElementById('controls');
+    const ch = CHALLENGES[state.challenge];
+    const currentStep = ch.steps[state.step];
+    let btns = '';
+
+    if(state.step >= ch.steps.length){
+      if(state.challenge < CHALLENGES.length - 1){
+        btns = `<button class="btn" onclick="SIM.next()">Next Challenge →</button>`;
+      } else {
+        btns = `<span style="color:var(--ok);font-weight:600">✓ All challenges complete!</span>`;
+      }
+    } else {
+      switch(currentStep){
+        case 'create-claim':
+          btns = `<button class="btn" onclick="SIM.createClaim()">kubectl apply ResourceClaim: ${ch.claim.label}</button>`;
+          break;
+        case 'allocate':
+          btns = `<button class="btn" onclick="SIM.allocate()">Schedule Pod → allocate devices</button>`;
+          break;
+        case 'try-allocate':
+          btns = `<button class="btn" onclick="SIM.tryAllocateFail()">Schedule Pod → attempt allocation</button>`;
+          break;
+        case 'observe':
+          btns = `<button class="btn" onclick="SIM.advance()">✓ Observe allocation</button>`;
+          break;
+        case 'setup-kueue':
+          btns = `<button class="btn" onclick="SIM.setupKueue()">Create ClusterQueue (cpu quota: 4)</button>`;
+          break;
+        case 'submit-low':
+          btns = `<button class="btn" onclick="SIM.submitJob('low-job-1','low',3)">Submit low-priority Job (cpu: 3)</button>`;
+          break;
+        case 'submit-overflow':
+          btns = `<button class="btn" onclick="SIM.submitJob('low-job-2','low',3)">Submit another low-priority Job (cpu: 3)</button>`;
+          break;
+        case 'observe-suspended':
+          btns = `<button class="btn" onclick="SIM.advance()">✓ Observe: second Job suspended</button>`;
+          break;
+        case 'submit-urgent':
+          btns = `<button class="btn" onclick="SIM.submitUrgent()">Submit high-priority Job (cpu: 3)</button>`;
+          break;
+        case 'observe-preemption':
+          btns = `<button class="btn" onclick="SIM.advance()">✓ Observe: preemption complete</button>`;
+          break;
+      }
+    }
+    const ch2 = CHALLENGES[state.challenge];
+    const extra = ch2.type.startsWith('kueue')
+      ? `Quota: ${state.quotaUsed}/${state.quotaTotal} CPU`
+      : `Allocated: ${state.allocated.length} GPUs`;
+    el.innerHTML = btns + `<span id="status">${extra}</span>`;
+  }
+
+  function addEvent(type, text){
+    state.events.push({type, text});
+    if(state.events.length > 40) state.events.shift();
+  }
+
+  function matchSelector(gpu, selector){
+    if(!selector) return true;
+    if(selector.includes('model == "A100"')) return gpu.model === 'A100';
+    if(selector.includes('model == "T4"')) return gpu.model === 'T4';
+    if(selector.includes('128Gi')) return false;
+    return true;
+  }
+
+  window.SIM = {
+    createClaim(){
+      const ch = CHALLENGES[state.challenge];
+      const cl = ch.claim;
+      addEvent('info', `ResourceClaim "${cl.label}" created (count: ${cl.count}${cl.selector ? ', selector: '+cl.selector : ''})`);
+      if(cl.selector){
+        state.gpus.forEach(g => {
+          if(g.status === 'available'){
+            g.status = matchSelector(g, cl.selector) ? 'matched' : 'no-match';
+          }
+        });
+      }
+      state.step++;
+      render();
+    },
+
+    allocate(){
+      const ch = CHALLENGES[state.challenge];
+      const cl = ch.claim;
+      let count = 0;
+      for(let g of state.gpus){
+        if(count >= cl.count) break;
+        if(g.status === 'available' || g.status === 'matched'){
+          if(matchSelector(g, cl.selector)){
+            g.status = 'allocated';
+            state.allocated.push(g.name);
+            addEvent('alloc', `Allocated ${g.name} (${g.model}, ${g.memory}) → claim "${cl.label}"`);
+            count++;
+          }
+        }
+      }
+      state.gpus.forEach(g => { if(g.status === 'matched' || g.status === 'no-match') g.status = 'available'; });
+      addEvent('alloc', `Pod scheduled on worker-1 with ${count} device(s)`);
+      state.step++;
+      render();
+    },
+
+    tryAllocateFail(){
+      const ch = CHALLENGES[state.challenge];
+      addEvent('pending', `Scheduler: evaluating 8 devices against selector...`);
+      state.gpus.forEach(g => {
+        if(g.status === 'available') g.status = 'no-match';
+      });
+      addEvent('pending', `0/8 devices match selector — Pod stays Pending`);
+      addEvent('pending', `Events: FailedScheduling "cannot allocate: no matching devices"`);
+      state.step++;
+      render();
+    },
+
+    setupKueue(){
+      state.jobs = [];
+      state.quotaUsed = 0;
+      addEvent('info', 'ClusterQueue "team-queue" created (cpu nominalQuota: 4)');
+      addEvent('info', 'LocalQueue "team-a" → team-queue');
+      addEvent('info', 'WorkloadPriorityClass: low=100, high=1000');
+      state.step++;
+      render();
+    },
+
+    submitJob(name, priority, cpu){
+      if(state.quotaUsed + cpu <= state.quotaTotal){
+        state.quotaUsed += cpu;
+        state.jobs.push({name, priority, cpu, status:'Admitted'});
+        addEvent('alloc', `Job "${name}" → Workload created → ADMITTED (${cpu}/${state.quotaTotal} CPU)`);
+      } else {
+        state.jobs.push({name, priority, cpu, status:'Suspended'});
+        addEvent('pending', `Job "${name}" → Workload created → SUSPENDED (would need ${state.quotaUsed+cpu}/${state.quotaTotal} CPU)`);
+      }
+      state.step++;
+      render();
+    },
+
+    submitUrgent(){
+      const lowJob = state.jobs.find(j => j.status === 'Admitted' && j.priority === 'low');
+      if(lowJob){
+        lowJob.status = 'Preempted';
+        state.quotaUsed -= lowJob.cpu;
+        addEvent('preempt', `Preempting "${lowJob.name}" (priority: low=100) — evicted, re-suspended`);
+      }
+      state.quotaUsed += 3;
+      state.jobs.push({name:'urgent-job', priority:'high', cpu:3, status:'Admitted'});
+      addEvent('alloc', `Job "urgent-job" (priority: high=1000) → ADMITTED — preempted lower-priority workload`);
+      state.step++;
+      render();
+    },
+
+    advance(){ state.step++; render(); },
+    next(){
+      state.challenge++;
+      state.step = 0;
+      if(CHALLENGES[state.challenge].type.startsWith('kueue') && state.challenge === 3){
+        resetGPUs();
+      }
+      if(CHALLENGES[state.challenge].type === 'kueue-preempt'){
+        // keep jobs from previous challenge
+      }
+      render();
+    },
+    reset(){
+      state = {challenge:0, step:0, events:[], gpus:GPUS.map(g=>({...g})),
+               allocated:[], jobs:[], quotaUsed:0, quotaTotal:4};
+      render();
+    }
+  };
+
+  document.getElementById('reset').onclick = SIM.reset;
+  render();
+})();
+</script>
+</body>
+</html>

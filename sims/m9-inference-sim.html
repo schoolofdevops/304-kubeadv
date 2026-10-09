@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Inference Signals Simulator</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(11px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650}
+  header h1 .k8s{color:var(--accent)}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;margin-left:auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+
+  #main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+    display:flex;flex-direction:column;overflow:hidden}
+  .card h2{font-size:.85rem;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+  /* Replicas panel */
+  .replicas{display:flex;gap:8px;flex-wrap:wrap;flex:1;align-content:start;overflow-y:auto}
+  .replica-box{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+    min-width:120px;flex:1;max-width:200px}
+  .replica-box .rname{font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--accent);margin-bottom:4px}
+  .replica-box .cache-bar{height:12px;background:#1a2236;border-radius:3px;overflow:hidden;margin-bottom:3px;position:relative}
+  .replica-box .cache-fill{height:100%;border-radius:3px;transition:width .3s}
+  .replica-box .cache-label{font-size:.7rem;color:var(--faint);font-family:var(--mono)}
+  .replica-box .active-reqs{font-size:.72rem;color:var(--dim);margin-top:2px}
+  .cache-ok{background:var(--ok)}
+  .cache-warn{background:var(--warn)}
+  .cache-crit{background:var(--bad)}
+
+  /* Metrics panel */
+  .metrics-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;flex:1;align-content:start}
+  .metric{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;text-align:center}
+  .metric .label{font-size:.7rem;color:var(--faint);text-transform:uppercase;letter-spacing:.5px}
+  .metric .value{font-family:var(--mono);font-size:1.1rem;font-weight:700;margin:2px 0}
+  .metric .unit{font-size:.7rem;color:var(--dim)}
+  .metric.ok .value{color:var(--ok)}
+  .metric.warn .value{color:var(--warn)}
+  .metric.crit .value{color:var(--bad)}
+  .metric.neutral .value{color:var(--accent)}
+
+  /* Request flow */
+  .flow-area{flex:1;overflow-y:auto;min-height:0}
+  .req-row{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px;margin-bottom:3px;
+    font-size:.78rem;font-family:var(--mono)}
+  .req-row .rid{min-width:30px;font-weight:700}
+  .req-row .phase{padding:1px 5px;border-radius:3px;font-size:.72rem;font-weight:600}
+  .req-row .phase.queued{background:rgba(245,185,66,.12);color:var(--warn)}
+  .req-row .phase.prefill{background:rgba(123,108,246,.15);color:var(--accent2)}
+  .req-row .phase.decode{background:rgba(76,201,240,.1);color:var(--accent)}
+  .req-row .phase.done{background:rgba(61,220,151,.1);color:var(--ok)}
+  .req-row .phase.rejected{background:rgba(255,107,107,.1);color:var(--bad)}
+  .req-row .tokens{color:var(--dim);font-size:.72rem;margin-left:auto}
+
+  /* Events log */
+  #events{overflow-y:auto}
+  #events .ev{font-family:var(--mono);font-size:.78rem;padding:2px 4px;border-radius:3px;margin-bottom:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #events .ev.alloc{color:var(--ok);background:rgba(61,220,151,.06)}
+  #events .ev.warn{color:var(--warn);background:rgba(245,185,66,.06)}
+  #events .ev.info{color:var(--accent);background:rgba(76,201,240,.06)}
+  #events .ev.bad{color:var(--bad);background:rgba(255,107,107,.06)}
+
+  #controls{grid-column:1/3;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:5px 12px;font-size:.85rem;cursor:pointer;transition:all .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.primary{border-color:var(--accent);color:var(--accent)}
+  .btn.ok{border-color:var(--ok);color:var(--ok)}
+  #status{font-family:var(--mono);font-size:.82rem;color:var(--dim);margin-left:auto}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span class="k8s">LLM</span> Inference Signals Sim</h1>
+    <button id="reset">Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Challenge</span>
+    <div class="steps" id="dots"></div>
+    <span class="txt" id="goal"></span>
+  </div>
+
+  <div id="main">
+    <div class="card" id="replica-panel">
+      <h2>Serving Replicas</h2>
+      <div class="replicas" id="replicas"></div>
+    </div>
+    <div class="card" id="metrics-panel">
+      <h2>Inference Metrics</h2>
+      <div class="metrics-grid" id="metrics"></div>
+    </div>
+    <div class="card" id="flow-panel">
+      <h2>Request Flow</h2>
+      <div class="flow-area" id="flow"></div>
+    </div>
+    <div class="card" id="events">
+      <h2>Events</h2>
+    </div>
+    <div id="controls"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  /* ── state ── */
+  let replicas = [];
+  let requests = [];
+  let nextReqId = 1;
+  let tickTimer = null;
+  let challengeIdx = 0;
+  let stepIdx = 0;
+  let totalTokensGenerated = 0;
+  let ttftValues = [];
+  let itlValues = [];
+
+  const TICK_MS = 200;
+  const CONCURRENCY_PER_REPLICA = 4;
+  const KV_SLOTS_PER_REPLICA = 32;
+
+  const CHALLENGES = [
+    {goal:'Send one request — watch TTFT (prefill) then token streaming (decode)',
+     steps:['send','observe-ttft','observe-done'],type:'single'},
+    {goal:'Compare short prompt (10 tokens) vs long prompt (200 tokens) — observe TTFT difference',
+     steps:['send-short','send-long','compare'],type:'compare'},
+    {goal:'Send 8 concurrent requests (concurrency limit: 4 per replica) — watch queue depth',
+     steps:['send-burst','observe-queue','observe-drain'],type:'concurrent'},
+    {goal:'Fill KV cache to 90%+ — GPU compute is low but new requests queue',
+     steps:['send-heavy','observe-cache','observe-bottleneck'],type:'cache-pressure'},
+    {goal:'Scale from 2 to 4 replicas under load — watch queue depth drop',
+     steps:['start-load','observe-queued','scale-up','observe-improved'],type:'scale'},
+  ];
+
+  /* ── DOM refs ── */
+  const $dots = document.getElementById('dots');
+  const $goal = document.getElementById('goal');
+  const $challenge = document.getElementById('challenge');
+  const $replicas = document.getElementById('replicas');
+  const $metrics = document.getElementById('metrics');
+  const $flow = document.getElementById('flow');
+  const $events = document.getElementById('events');
+  const $controls = document.getElementById('controls');
+  document.getElementById('reset').onclick = () => init();
+
+  /* ── helpers ── */
+  function log(msg, cls='info'){
+    const d = document.createElement('div');
+    d.className = 'ev ' + cls;
+    d.textContent = msg;
+    $events.appendChild(d);
+    $events.scrollTop = $events.scrollHeight;
+    if($events.querySelectorAll('.ev').length > 80)
+      $events.removeChild($events.querySelector('.ev'));
+  }
+
+  function cacheColor(pct){
+    if(pct < 0.6) return 'cache-ok';
+    if(pct < 0.85) return 'cache-warn';
+    return 'cache-crit';
+  }
+
+  function metricClass(name, val){
+    if(name === 'queue'){
+      if(val === 0) return 'ok';
+      if(val <= 3) return 'warn';
+      return 'crit';
+    }
+    if(name === 'cache'){
+      if(val < 60) return 'ok';
+      if(val < 85) return 'warn';
+      return 'crit';
+    }
+    if(name === 'ttft'){
+      if(val < 150) return 'ok';
+      if(val < 400) return 'warn';
+      return 'crit';
+    }
+    return 'neutral';
+  }
+
+  /* ── replica management ── */
+  function createReplica(id){
+    return {id, activeReqs:[], kvUsed:0, kvTotal:KV_SLOTS_PER_REPLICA};
+  }
+
+  function initReplicas(count){
+    replicas = [];
+    for(let i = 0; i < count; i++) replicas.push(createReplica(i));
+  }
+
+  function findBestReplica(){
+    let best = null, bestScore = Infinity;
+    for(const r of replicas){
+      if(r.activeReqs.length >= CONCURRENCY_PER_REPLICA) continue;
+      const score = r.kvUsed / r.kvTotal + r.activeReqs.length / CONCURRENCY_PER_REPLICA;
+      if(score < bestScore){ bestScore = score; best = r; }
+    }
+    return best;
+  }
+
+  /* ── request lifecycle ── */
+  function createRequest(promptTokens, maxGenTokens){
+    const id = nextReqId++;
+    const kvNeeded = Math.max(1, Math.ceil(promptTokens / 8));
+    return {
+      id, promptTokens, maxGenTokens, kvNeeded,
+      phase:'queued', tokensGenerated:0,
+      prefillTicks: Math.max(1, Math.ceil(promptTokens / 20)),
+      prefillRemaining: Math.max(1, Math.ceil(promptTokens / 20)),
+      replica: null,
+      startTick: 0, firstTokenTick: 0
+    };
+  }
+
+  function submitRequest(req){
+    requests.push(req);
+    req.startTick = tickCount;
+    log(`REQ-${req.id}: submitted (${req.promptTokens} prompt tokens, max ${req.maxGenTokens} gen)`, 'info');
+  }
+
+  /* ── tick engine ── */
+  let tickCount = 0;
+
+  function tick(){
+    tickCount++;
+
+    // try to schedule queued requests
+    for(const req of requests){
+      if(req.phase !== 'queued') continue;
+      const r = findBestReplica();
+      if(!r) continue;
+      if(r.kvUsed + req.kvNeeded > r.kvTotal){
+        // cache full on this replica, try next
+        continue;
+      }
+      req.phase = 'prefill';
+      req.replica = r;
+      r.activeReqs.push(req);
+      r.kvUsed += req.kvNeeded;
+      log(`REQ-${req.id}: prefill on replica-${r.id} (${req.kvNeeded} KV slots)`, 'info');
+    }
+
+    // process active requests
+    for(const r of replicas){
+      for(const req of [...r.activeReqs]){
+        if(req.phase === 'prefill'){
+          req.prefillRemaining--;
+          if(req.prefillRemaining <= 0){
+            req.phase = 'decode';
+            req.firstTokenTick = tickCount;
+            const ttft = (req.firstTokenTick - req.startTick) * TICK_MS;
+            ttftValues.push(ttft);
+            log(`REQ-${req.id}: first token (TTFT: ${ttft}ms)`, 'alloc');
+          }
+        } else if(req.phase === 'decode'){
+          req.tokensGenerated++;
+          totalTokensGenerated++;
+          itlValues.push(TICK_MS);
+          if(req.tokensGenerated >= req.maxGenTokens){
+            req.phase = 'done';
+            r.kvUsed = Math.max(0, r.kvUsed - req.kvNeeded);
+            r.activeReqs = r.activeReqs.filter(x => x !== req);
+            log(`REQ-${req.id}: complete (${req.tokensGenerated} tokens)`, 'alloc');
+          }
+        }
+      }
+    }
+
+    renderAll();
+    checkStepCompletion();
+  }
+
+  /* ── rendering ── */
+  function renderReplicas(){
+    $replicas.innerHTML = '';
+    for(const r of replicas){
+      const pct = r.kvUsed / r.kvTotal;
+      const box = document.createElement('div');
+      box.className = 'replica-box';
+      box.innerHTML = `
+        <div class="rname">replica-${r.id}</div>
+        <div class="cache-bar"><div class="cache-fill ${cacheColor(pct)}" style="width:${pct*100}%"></div></div>
+        <div class="cache-label">KV: ${r.kvUsed}/${r.kvTotal} slots (${(pct*100).toFixed(0)}%)</div>
+        <div class="active-reqs">${r.activeReqs.length}/${CONCURRENCY_PER_REPLICA} active</div>
+      `;
+      $replicas.appendChild(box);
+    }
+  }
+
+  function renderMetrics(){
+    const queueDepth = requests.filter(r => r.phase === 'queued').length;
+    const active = requests.filter(r => r.phase === 'prefill' || r.phase === 'decode').length;
+    const avgTtft = ttftValues.length ? ttftValues.reduce((a,b)=>a+b,0)/ttftValues.length : 0;
+    const avgItl = itlValues.length ? TICK_MS : 0;
+    const totalCache = replicas.reduce((s,r) => s + r.kvUsed, 0);
+    const totalSlots = replicas.reduce((s,r) => s + r.kvTotal, 0);
+    const cachePct = totalSlots ? (totalCache/totalSlots*100) : 0;
+    const tps = totalTokensGenerated / Math.max(1, tickCount * TICK_MS / 1000);
+
+    const data = [
+      {name:'queue', label:'Queue Depth', value:queueDepth, unit:'requests'},
+      {name:'active', label:'Active', value:active, unit:'requests'},
+      {name:'ttft', label:'Avg TTFT', value:Math.round(avgTtft), unit:'ms'},
+      {name:'itl', label:'ITL', value:avgItl, unit:'ms'},
+      {name:'tps', label:'Tokens/sec', value:tps.toFixed(1), unit:'tok/s'},
+      {name:'cache', label:'KV Cache', value:cachePct.toFixed(0), unit:'%'},
+    ];
+
+    $metrics.innerHTML = '';
+    for(const d of data){
+      const cls = metricClass(d.name, parseFloat(d.value));
+      const m = document.createElement('div');
+      m.className = 'metric ' + cls;
+      m.innerHTML = `<div class="label">${d.label}</div><div class="value">${d.value}</div><div class="unit">${d.unit}</div>`;
+      $metrics.appendChild(m);
+    }
+  }
+
+  function renderFlow(){
+    $flow.innerHTML = '';
+    const visible = requests.slice(-20);
+    for(const req of visible){
+      const row = document.createElement('div');
+      row.className = 'req-row';
+      const phaseCls = req.phase;
+      let phaseText = req.phase;
+      if(req.phase === 'decode') phaseText = `decode (${req.tokensGenerated}/${req.maxGenTokens})`;
+      row.innerHTML = `
+        <span class="rid">#${req.id}</span>
+        <span class="phase ${phaseCls}">${phaseText}</span>
+        <span class="tokens">${req.promptTokens}→${req.maxGenTokens} tok</span>
+      `;
+      $flow.appendChild(row);
+    }
+    $flow.scrollTop = $flow.scrollHeight;
+  }
+
+  function renderAll(){
+    renderReplicas();
+    renderMetrics();
+    renderFlow();
+  }
+
+  /* ── challenge progression ── */
+  function renderChallenge(){
+    const c = CHALLENGES[challengeIdx];
+    $dots.innerHTML = '';
+    for(let i = 0; i < CHALLENGES.length; i++){
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < challengeIdx ? ' done' : i === challengeIdx ? ' cur' : '');
+      d.textContent = i + 1;
+      $dots.appendChild(d);
+    }
+    $goal.innerHTML = c.goal;
+    $challenge.classList.toggle('success', false);
+    renderControls();
+  }
+
+  function nextStep(){
+    stepIdx++;
+    if(stepIdx >= CHALLENGES[challengeIdx].steps.length){
+      completeChallenge();
+    } else {
+      renderControls();
+    }
+  }
+
+  function completeChallenge(){
+    $challenge.classList.add('success');
+    log(`✓ Challenge ${challengeIdx+1} complete`, 'alloc');
+    $controls.innerHTML = '';
+    if(challengeIdx < CHALLENGES.length - 1){
+      const btn = document.createElement('button');
+      btn.className = 'btn ok';
+      btn.textContent = 'Next Challenge →';
+      btn.onclick = () => {
+        challengeIdx++;
+        stepIdx = 0;
+        resetState();
+        renderChallenge();
+        renderAll();
+      };
+      $controls.appendChild(btn);
+    } else {
+      const span = document.createElement('span');
+      span.id = 'status';
+      span.textContent = '✓ All challenges complete';
+      span.style.color = 'var(--ok)';
+      $controls.appendChild(span);
+    }
+  }
+
+  function checkStepCompletion(){
+    const c = CHALLENGES[challengeIdx];
+    const step = c.steps[stepIdx];
+    const queueDepth = requests.filter(r => r.phase === 'queued').length;
+    const active = requests.filter(r => r.phase === 'prefill' || r.phase === 'decode').length;
+    const done = requests.filter(r => r.phase === 'done').length;
+    const totalCache = replicas.reduce((s,r) => s + r.kvUsed, 0);
+    const totalSlots = replicas.reduce((s,r) => s + r.kvTotal, 0);
+    const cachePct = totalSlots ? totalCache/totalSlots : 0;
+
+    if(c.type === 'single'){
+      if(step === 'observe-ttft' && ttftValues.length > 0) nextStep();
+      if(step === 'observe-done' && done >= 1) nextStep();
+    }
+    if(c.type === 'compare'){
+      if(step === 'compare' && done >= 2) nextStep();
+    }
+    if(c.type === 'concurrent'){
+      if(step === 'observe-queue' && (queueDepth > 0 || active >= CONCURRENCY_PER_REPLICA * replicas.length)) nextStep();
+      if(step === 'observe-drain' && queueDepth === 0 && active === 0 && done >= 6) nextStep();
+    }
+    if(c.type === 'cache-pressure'){
+      if(step === 'observe-cache' && cachePct > 0.8) nextStep();
+      if(step === 'observe-bottleneck' && queueDepth > 0) nextStep();
+    }
+    if(c.type === 'scale'){
+      if(step === 'observe-queued' && queueDepth > 0) nextStep();
+      if(step === 'observe-improved' && queueDepth === 0 && done > 4) nextStep();
+    }
+  }
+
+  /* ── controls per challenge/step ── */
+  function renderControls(){
+    $controls.innerHTML = '';
+    const c = CHALLENGES[challengeIdx];
+    const step = c.steps[stepIdx];
+
+    if(c.type === 'single'){
+      if(step === 'send'){
+        addBtn('Send Request (50 tokens)', () => {
+          submitRequest(createRequest(50, 20));
+          startTicking();
+          nextStep();
+        });
+      }
+    }
+    if(c.type === 'compare'){
+      if(step === 'send-short'){
+        addBtn('Send Short Prompt (10 tokens)', () => {
+          submitRequest(createRequest(10, 15));
+          startTicking();
+          nextStep();
+        });
+      }
+      if(step === 'send-long'){
+        addBtn('Send Long Prompt (200 tokens)', () => {
+          submitRequest(createRequest(200, 30));
+          nextStep();
+        });
+      }
+    }
+    if(c.type === 'concurrent'){
+      if(step === 'send-burst'){
+        addBtn('Send 8 Requests', () => {
+          for(let i = 0; i < 8; i++){
+            submitRequest(createRequest(40 + Math.floor(Math.random()*60), 25));
+          }
+          startTicking();
+          nextStep();
+        });
+      }
+    }
+    if(c.type === 'cache-pressure'){
+      if(step === 'send-heavy'){
+        addBtn('Send 6 Heavy Requests (500 tokens each)', () => {
+          for(let i = 0; i < 6; i++){
+            submitRequest(createRequest(500, 40));
+          }
+          startTicking();
+          nextStep();
+        });
+      }
+    }
+    if(c.type === 'scale'){
+      if(step === 'start-load'){
+        addBtn('Start Continuous Load (10 requests)', () => {
+          for(let i = 0; i < 10; i++){
+            submitRequest(createRequest(80, 30));
+          }
+          startTicking();
+          nextStep();
+        });
+      }
+      if(step === 'scale-up'){
+        addBtn('Scale: 2 → 4 Replicas', () => {
+          replicas.push(createReplica(2));
+          replicas.push(createReplica(3));
+          log('Scaled to 4 replicas — new KV cache slots available', 'alloc');
+          nextStep();
+        }, 'primary');
+      }
+    }
+
+    // status indicator
+    const span = document.createElement('span');
+    span.id = 'status';
+    const stepLabel = step.replace(/-/g, ' ');
+    span.textContent = `Step: ${stepLabel}`;
+    $controls.appendChild(span);
+  }
+
+  function addBtn(text, handler, extraClass){
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (extraClass ? ' ' + extraClass : '');
+    btn.textContent = text;
+    btn.onclick = handler;
+    $controls.appendChild(btn);
+  }
+
+  /* ── tick control ── */
+  function startTicking(){
+    if(tickTimer) return;
+    tickTimer = setInterval(tick, TICK_MS);
+  }
+
+  function stopTicking(){
+    if(tickTimer){ clearInterval(tickTimer); tickTimer = null; }
+  }
+
+  /* ── init ── */
+  function resetState(){
+    stopTicking();
+    requests = [];
+    nextReqId = 1;
+    tickCount = 0;
+    totalTokensGenerated = 0;
+    ttftValues = [];
+    itlValues = [];
+    const c = CHALLENGES[challengeIdx];
+    initReplicas(c.type === 'single' || c.type === 'compare' ? 1 : 2);
+    $events.querySelectorAll('.ev').forEach(e => e.remove());
+  }
+
+  function init(){
+    challengeIdx = 0;
+    stepIdx = 0;
+    resetState();
+    renderChallenge();
+    renderAll();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

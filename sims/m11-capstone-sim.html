@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capstone War-Room Simulator</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(11px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650}
+  header h1 .k8s{color:var(--accent)}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;margin-left:auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+
+  #main{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;overflow-y:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+    display:flex;flex-direction:column}
+  .card h2{font-size:.85rem;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+  .order-list{list-style:none;counter-reset:item}
+  .order-list li{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:4px;
+    background:var(--panel2);border:1px solid var(--line);cursor:pointer;user-select:none;transition:background .15s}
+  .order-list li:hover{background:rgba(76,201,240,.06)}
+  .order-list li .idx{font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--faint);min-width:18px}
+  .order-list li .stage-name{font-weight:600;color:var(--accent);font-size:.88rem;min-width:120px}
+  .order-list li .stage-desc{color:var(--dim);font-size:.84rem;flex:1}
+  .order-list li.correct-pos{border-color:var(--ok);background:rgba(61,220,151,.06)}
+  .order-list li.wrong-pos{border-color:var(--bad);background:rgba(255,107,107,.06)}
+
+  .op-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:4px;
+    background:var(--panel2);border:1px solid var(--line)}
+  .op-row .op-cmd{font-family:var(--mono);font-size:.8rem;color:var(--accent);flex:1;word-break:break-all}
+  .op-row .op-desc{flex:1;font-size:.88rem;color:var(--txt)}
+
+  .choice-btns{display:flex;gap:6px;flex-shrink:0}
+  .choice-btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:4px 12px;font-size:.84rem;cursor:pointer;transition:all .15s}
+  .choice-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .choice-btn.selected{border-color:var(--accent2);color:var(--accent2);background:rgba(123,108,246,.12)}
+  .choice-btn.correct{border-color:var(--ok);color:var(--ok);background:rgba(61,220,151,.1)}
+  .choice-btn.wrong{border-color:var(--bad);color:var(--bad);background:rgba(255,107,107,.1)}
+  .choice-btn:disabled{cursor:not-allowed;opacity:.7}
+
+  .match-grid{display:grid;grid-template-columns:1fr;gap:4px}
+  .match-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;
+    background:var(--panel2);border:1px solid var(--line)}
+  .match-item .symptom{flex:1;font-size:.88rem;color:var(--txt)}
+  .match-item select{background:var(--panel);color:var(--txt);border:1px solid var(--line);
+    border-radius:4px;padding:3px 6px;font-size:.82rem;cursor:pointer}
+  .match-item select:disabled{opacity:.7;cursor:not-allowed}
+  .match-item.correct{border-color:var(--ok);background:rgba(61,220,151,.06)}
+  .match-item.wrong{border-color:var(--bad);background:rgba(255,107,107,.06)}
+
+  .pm-block{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+    margin-bottom:6px}
+  .pm-block .pm-label{font-size:.82rem;color:var(--dim);margin-bottom:4px}
+  .pm-block .pm-event{font-size:.88rem;color:var(--txt);margin-bottom:6px;font-style:italic}
+
+  #controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 0}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:5px 12px;font-size:.85rem;cursor:pointer;transition:all .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.ok{border-color:var(--ok);color:var(--ok)}
+  #status{font-family:var(--mono);font-size:.82rem;color:var(--dim);margin-left:auto}
+
+  .score-bar{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .score-bar .label{font-size:.82rem;color:var(--dim)}
+  .score-bar .val{font-family:var(--mono);font-size:.92rem;font-weight:700}
+  .score-bar .val.perfect{color:var(--ok)}
+  .score-bar .val.partial{color:var(--warn)}
+  .score-bar .val.low{color:var(--bad)}
+
+  .feedback{font-size:.82rem;color:var(--dim);margin-top:4px;padding:4px 8px;
+    background:rgba(76,201,240,.04);border-radius:4px;border-left:2px solid var(--accent)}
+
+  .scenario{font-size:.88rem;color:var(--dim);margin-bottom:8px;padding:4px 8px;
+    background:rgba(123,108,246,.06);border-radius:4px;border-left:2px solid var(--accent2)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span class="k8s">Capstone</span> War-Room Sim</h1>
+    <button id="reset">Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Challenge</span>
+    <div class="steps" id="dots"></div>
+    <span class="txt" id="goal"></span>
+  </div>
+
+  <div id="main"></div>
+  <div id="controls"></div>
+</div>
+
+<script>
+(function(){
+  const $dots = document.getElementById('dots');
+  const $goal = document.getElementById('goal');
+  const $challenge = document.getElementById('challenge');
+  const $main = document.getElementById('main');
+  const $controls = document.getElementById('controls');
+  document.getElementById('reset').onclick = () => init();
+
+  let challengeIdx = 0;
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 1: Triage Priority — rank faults by blast radius
+     ═══════════════════════════════════════════════════ */
+  const C1_CORRECT = [
+    { name: 'etcd degradation', desc: 'Slow API responses, backend filling up — affects the entire cluster' },
+    { name: 'API throttling', desc: 'Intermittent 429 errors on SA requests — blocks all controllers and operators' },
+    { name: 'CoreDNS corruption', desc: 'External DNS lookups failing — breaks any workload needing outside connectivity' },
+    { name: 'Scheduling failure', desc: 'Pods stuck Pending — prevents new workloads from running on tainted node' },
+    { name: 'Broken operator', desc: 'Website CRs not reconciled, operator ContainerCreating — one CRD affected' },
+    { name: 'Kueue blocked', desc: 'Training jobs suspended forever — batch queue stalled, no production impact' },
+  ];
+
+  function renderC1() {
+    const seed = [4, 1, 5, 0, 3, 2];
+    const items = seed.map(i => ({...C1_CORRECT[i]}));
+    let order = items.map((_, i) => i);
+    let locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('Triage Priority — Rank by blast radius (1 = fix first)');
+
+      const sc = document.createElement('div');
+      sc.className = 'scenario';
+      sc.textContent = 'Six faults are active on the NimbusAI platform. Rank them by blast radius — which fault affects the most systems and should be fixed first?';
+      card.appendChild(sc);
+
+      const list = document.createElement('ul');
+      list.className = 'order-list';
+      for (let pos = 0; pos < order.length; pos++) {
+        const itemIdx = order[pos];
+        const item = items[itemIdx];
+        const li = document.createElement('li');
+        if (locked) {
+          const correctItem = C1_CORRECT[pos];
+          li.classList.add(item.name === correctItem.name ? 'correct-pos' : 'wrong-pos');
+        }
+
+        const idx = document.createElement('span');
+        idx.className = 'idx';
+        idx.textContent = (pos + 1) + '.';
+        li.appendChild(idx);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'stage-name';
+        nameSpan.textContent = item.name;
+        li.appendChild(nameSpan);
+
+        const descSpan = document.createElement('span');
+        descSpan.className = 'stage-desc';
+        descSpan.textContent = item.desc;
+        li.appendChild(descSpan);
+
+        if (!locked) {
+          if (pos > 0) {
+            const up = document.createElement('button');
+            up.className = 'choice-btn';
+            up.textContent = '▲';
+            up.style.cssText = 'padding:2px 6px;font-size:.72rem';
+            up.onclick = () => { [order[pos], order[pos-1]] = [order[pos-1], order[pos]]; render(); };
+            li.appendChild(up);
+          }
+          if (pos < order.length - 1) {
+            const dn = document.createElement('button');
+            dn.className = 'choice-btn';
+            dn.textContent = '▼';
+            dn.style.cssText = 'padding:2px 6px;font-size:.72rem';
+            dn.onclick = () => { [order[pos], order[pos+1]] = [order[pos+1], order[pos]]; render(); };
+            li.appendChild(dn);
+          }
+        }
+        list.appendChild(li);
+      }
+      card.appendChild(list);
+
+      if (locked) {
+        let correct = 0;
+        for (let i = 0; i < order.length; i++) {
+          if (items[order[i]].name === C1_CORRECT[i].name) correct++;
+        }
+        const sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = '<span class="label">Score:</span><span class="val ' + (correct===6?'perfect':correct>=4?'partial':'low') + '">' + correct + '/6</span>';
+        card.appendChild(sb);
+        if (correct < 6) {
+          const fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'Triage by blast radius: etcd affects everything (cluster-wide storage). API throttling blocks all controllers. CoreDNS breaks external access. Scheduling stops new pods. Operator and Kueue are scoped to specific workloads.';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+      $controls.innerHTML = '';
+      if (!locked) {
+        addBtn('Check Order', function() { locked = true; render(); });
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 2: Evidence vs Action — classify kubectl commands
+     ═══════════════════════════════════════════════════ */
+  const C2_CMDS = [
+    { cmd: 'kubectl get pods -A', kind: 'Evidence', reason: 'Read-only: lists existing pods' },
+    { cmd: 'kubectl delete pod web-abc -n prod', kind: 'Action', reason: 'Mutates: removes a running pod' },
+    { cmd: 'kubectl describe node worker-1', kind: 'Evidence', reason: 'Read-only: shows node details and taints' },
+    { cmd: 'kubectl apply -f fix.yaml', kind: 'Action', reason: 'Mutates: creates or updates resources' },
+    { cmd: 'kubectl logs -n kube-system coredns-abc', kind: 'Evidence', reason: 'Read-only: reads container logs' },
+    { cmd: 'kubectl taint nodes worker-1 key-', kind: 'Action', reason: 'Mutates: removes a taint from a node' },
+    { cmd: 'kubectl get events --sort-by=.lastTimestamp', kind: 'Evidence', reason: 'Read-only: shows recent cluster events' },
+    { cmd: 'kubectl scale deploy/web --replicas=3', kind: 'Action', reason: 'Mutates: changes replica count' },
+    { cmd: 'kubectl top nodes', kind: 'Evidence', reason: 'Read-only: shows resource usage' },
+    { cmd: 'kubectl patch cq capstone-cq --type=merge -p \'{"spec":...}\'', kind: 'Action', reason: 'Mutates: changes ClusterQueue spec' },
+  ];
+
+  function renderC2() {
+    let answers = {};
+    let locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('Evidence vs Action — Classify each command');
+
+      const sc = document.createElement('div');
+      sc.className = 'scenario';
+      sc.textContent = 'During an incident, read the system before changing it. Classify each kubectl command: does it gather evidence (read-only) or take action (mutates state)?';
+      card.appendChild(sc);
+
+      for (let i = 0; i < C2_CMDS.length; i++) {
+        const c = C2_CMDS[i];
+        const row = document.createElement('div');
+        row.className = 'op-row';
+
+        const cmdSpan = document.createElement('span');
+        cmdSpan.className = 'op-cmd';
+        cmdSpan.textContent = c.cmd;
+        row.appendChild(cmdSpan);
+
+        const btns = document.createElement('div');
+        btns.className = 'choice-btns';
+        for (var ch = 0; ch < 2; ch++) {
+          var choice = ch === 0 ? 'Evidence' : 'Action';
+          (function(choice, i) {
+            var b = document.createElement('button');
+            b.className = 'choice-btn';
+            b.textContent = choice;
+            b.disabled = locked;
+            var key = 'c' + i;
+            if (answers[key] === choice) {
+              if (locked) {
+                b.classList.add(choice === c.kind ? 'correct' : 'wrong');
+              } else {
+                b.classList.add('selected');
+              }
+            } else if (locked && choice === c.kind) {
+              b.classList.add('correct');
+            }
+            b.onclick = function() {
+              if (locked) return;
+              answers[key] = choice;
+              render();
+            };
+            btns.appendChild(b);
+          })(choice, i);
+        }
+        row.appendChild(btns);
+        card.appendChild(row);
+      }
+
+      if (locked) {
+        var correct = 0;
+        for (var i = 0; i < C2_CMDS.length; i++) {
+          if (answers['c' + i] === C2_CMDS[i].kind) correct++;
+        }
+        var sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = '<span class="label">Score:</span><span class="val ' + (correct===10?'perfect':correct>=7?'partial':'low') + '">' + correct + '/10</span>';
+        card.appendChild(sb);
+        if (correct < 10) {
+          var fb = document.createElement('div');
+          fb.className = 'feedback';
+          var reasons = [];
+          for (var j = 0; j < C2_CMDS.length; j++) {
+            if (answers['c' + j] !== C2_CMDS[j].kind) {
+              reasons.push(C2_CMDS[j].cmd.split(' ').slice(1,3).join(' ') + ': ' + C2_CMDS[j].reason);
+            }
+          }
+          fb.textContent = 'Evidence = read-only (get, describe, logs, events, top). Action = mutates state (delete, apply, patch, taint, scale). ' + reasons.join('. ');
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+      $controls.innerHTML = '';
+      var allAnswered = Object.keys(answers).length === C2_CMDS.length;
+      if (!locked) {
+        addBtn('Check Answers', function() { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 3: Symptom Matching — match symptoms to root causes
+     ═══════════════════════════════════════════════════ */
+  const C3_SYMPTOMS = [
+    { symptom: 'Inference-worker pods stuck in Pending state', cause: 'tainted-node', causeLabel: 'Tainted node (maintenance NoSchedule)' },
+    { symptom: 'External DNS lookups timing out', cause: 'coredns', causeLabel: 'Corrupted CoreDNS Corefile (bad forwarder IP)' },
+    { symptom: 'Operator pod stuck in ContainerCreating', cause: 'missing-cm', causeLabel: 'Missing ConfigMap (volume mount fails)' },
+    { symptom: 'Intermittent HTTP 429 responses from API server', cause: 'flowschema', causeLabel: 'FlowSchema throttling SA requests (1 share)' },
+    { symptom: 'All kubectl commands noticeably slower than usual', cause: 'etcd-junk', causeLabel: 'etcd backend 80% full with junk ConfigMaps' },
+    { symptom: 'Training jobs suspended forever, never start', cause: 'kueue-zero', causeLabel: 'ClusterQueue nominalQuota set to 0' },
+  ];
+  const C3_OPTIONS = [
+    { value: '', label: '— select cause —' },
+    { value: 'tainted-node', label: 'Tainted node (maintenance NoSchedule)' },
+    { value: 'coredns', label: 'Corrupted CoreDNS Corefile (bad forwarder IP)' },
+    { value: 'missing-cm', label: 'Missing ConfigMap (volume mount fails)' },
+    { value: 'flowschema', label: 'FlowSchema throttling SA requests (1 share)' },
+    { value: 'etcd-junk', label: 'etcd backend 80% full with junk ConfigMaps' },
+    { value: 'kueue-zero', label: 'ClusterQueue nominalQuota set to 0' },
+  ];
+
+  function renderC3() {
+    var answers = {};
+    var locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      var card = mkCard('Symptom Matching — What caused each problem?');
+
+      var sc = document.createElement('div');
+      sc.className = 'scenario';
+      sc.textContent = 'You observe 6 symptoms during the incident. Match each symptom to the root cause that produced it.';
+      card.appendChild(sc);
+
+      var grid = document.createElement('div');
+      grid.className = 'match-grid';
+      for (var i = 0; i < C3_SYMPTOMS.length; i++) {
+        (function(i) {
+          var s = C3_SYMPTOMS[i];
+          var item = document.createElement('div');
+          item.className = 'match-item';
+          if (locked) {
+            item.classList.add(answers['s' + i] === s.cause ? 'correct' : 'wrong');
+          }
+
+          var sym = document.createElement('span');
+          sym.className = 'symptom';
+          sym.textContent = s.symptom;
+          item.appendChild(sym);
+
+          var sel = document.createElement('select');
+          sel.disabled = locked;
+          for (var j = 0; j < C3_OPTIONS.length; j++) {
+            var opt = document.createElement('option');
+            opt.value = C3_OPTIONS[j].value;
+            opt.textContent = C3_OPTIONS[j].label;
+            if (answers['s' + i] === C3_OPTIONS[j].value) opt.selected = true;
+            sel.appendChild(opt);
+          }
+          sel.onchange = function() {
+            if (locked) return;
+            answers['s' + i] = sel.value;
+            render();
+          };
+          item.appendChild(sel);
+
+          grid.appendChild(item);
+        })(i);
+      }
+      card.appendChild(grid);
+
+      if (locked) {
+        var correct = 0;
+        for (var i = 0; i < C3_SYMPTOMS.length; i++) {
+          if (answers['s' + i] === C3_SYMPTOMS[i].cause) correct++;
+        }
+        var sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = '<span class="label">Score:</span><span class="val ' + (correct===6?'perfect':correct>=4?'partial':'low') + '">' + correct + '/6</span>';
+        card.appendChild(sb);
+        if (correct < 6) {
+          var fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'Each symptom maps to one root cause: Pending pods = tainted node. DNS timeout = bad Corefile. ContainerCreating = missing ConfigMap. 429s = FlowSchema throttle. Slow API = etcd full. Suspended jobs = queue quota 0.';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+      $controls.innerHTML = '';
+      var filled = 0;
+      for (var k in answers) if (answers[k]) filled++;
+      if (!locked) {
+        addBtn('Check Matches', function() { locked = true; render(); }, filled === 6 ? '' : 'disabled');
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 4: Module Skills Map — match fault to source module
+     ═══════════════════════════════════════════════════ */
+  const C4_FAULTS = [
+    { fault: 'Scheduling failure — pods Pending due to taint', module: 'M4', moduleName: 'M4 Scheduling & Controllers' },
+    { fault: 'CoreDNS corruption — external DNS resolution fails', module: 'M7', moduleName: 'M7 Networking & Data Plane' },
+    { fault: 'Broken operator — pod stuck ContainerCreating', module: 'M5', moduleName: 'M5 CRDs & Operators' },
+    { fault: 'API throttling — FlowSchema causing 429s', module: 'M2', moduleName: 'M2 API Request Lifecycle' },
+    { fault: 'etcd degradation — backend filling with junk', module: 'M3', moduleName: 'M3 etcd Source of Truth' },
+    { fault: 'Kueue blocked — jobs suspended, queue quota zero', module: 'M8', moduleName: 'M8 Accelerators & Training' },
+  ];
+  var C4_MODULES = ['M2', 'M3', 'M4', 'M5', 'M7', 'M8'];
+
+  function renderC4() {
+    var answers = {};
+    var locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      var card = mkCard('Module Skills Map — Where did you learn to fix this?');
+
+      var sc = document.createElement('div');
+      sc.className = 'scenario';
+      sc.textContent = 'Each fault requires a skill taught in a specific earlier module. Match each fault to the module where the diagnostic technique was covered.';
+      card.appendChild(sc);
+
+      var grid = document.createElement('div');
+      grid.className = 'match-grid';
+      for (var i = 0; i < C4_FAULTS.length; i++) {
+        (function(i) {
+          var f = C4_FAULTS[i];
+          var item = document.createElement('div');
+          item.className = 'match-item';
+          if (locked) {
+            item.classList.add(answers['f' + i] === f.module ? 'correct' : 'wrong');
+          }
+
+          var sym = document.createElement('span');
+          sym.className = 'symptom';
+          sym.textContent = f.fault;
+          item.appendChild(sym);
+
+          var btns = document.createElement('div');
+          btns.className = 'choice-btns';
+          for (var j = 0; j < C4_MODULES.length; j++) {
+            (function(mod, i) {
+              var b = document.createElement('button');
+              b.className = 'choice-btn';
+              b.textContent = mod;
+              b.disabled = locked;
+              b.style.padding = '2px 8px';
+              b.style.fontSize = '.76rem';
+              if (answers['f' + i] === mod) {
+                if (locked) {
+                  b.classList.add(mod === f.module ? 'correct' : 'wrong');
+                } else {
+                  b.classList.add('selected');
+                }
+              } else if (locked && mod === f.module) {
+                b.classList.add('correct');
+              }
+              b.onclick = function() {
+                if (locked) return;
+                answers['f' + i] = mod;
+                render();
+              };
+              btns.appendChild(b);
+            })(C4_MODULES[j], i);
+          }
+          item.appendChild(btns);
+          grid.appendChild(item);
+        })(i);
+      }
+      card.appendChild(grid);
+
+      if (locked) {
+        var correct = 0;
+        for (var i = 0; i < C4_FAULTS.length; i++) {
+          if (answers['f' + i] === C4_FAULTS[i].module) correct++;
+        }
+        var sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = '<span class="label">Score:</span><span class="val ' + (correct===6?'perfect':correct>=4?'partial':'low') + '">' + correct + '/6</span>';
+        card.appendChild(sb);
+        if (correct < 6) {
+          var fb = document.createElement('div');
+          fb.className = 'feedback';
+          var lines = [];
+          for (var k = 0; k < C4_FAULTS.length; k++) {
+            if (answers['f' + k] !== C4_FAULTS[k].module) {
+              lines.push(C4_FAULTS[k].fault.split(' — ')[0] + ' → ' + C4_FAULTS[k].moduleName);
+            }
+          }
+          fb.textContent = 'Correct mapping: ' + lines.join('. ') + '.';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+      $controls.innerHTML = '';
+      var allAnswered = Object.keys(answers).length === C4_FAULTS.length;
+      if (!locked) {
+        addBtn('Check Answers', function() { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 5: Postmortem Builder — fill in the blanks
+     ═══════════════════════════════════════════════════ */
+  const C5_EVENTS = [
+    {
+      time: '14:00',
+      event: 'Maintenance window: team member runs a script to prepare GPU node for firmware upgrade.',
+      q: 'What was the root cause of Pending pods?',
+      opts: ['Node ran out of CPU', 'Taint prevented scheduling on the GPU node', 'Container image was missing', 'ResourceQuota exhausted'],
+      answer: 1,
+    },
+    {
+      time: '14:05',
+      event: 'Automated cleanup job accidentally deletes all ConfigMaps in m5-system namespace.',
+      q: 'What broke when the ConfigMap was deleted?',
+      opts: ['Kueue stopped admitting jobs', 'The Website CRD was removed', 'Operator pod could not mount its source volume', 'RBAC bindings were revoked'],
+      answer: 2,
+    },
+    {
+      time: '14:10',
+      event: 'Junior engineer edits CoreDNS Corefile to add a custom DNS zone but typos the upstream IP.',
+      q: 'What is the correct first diagnostic step?',
+      opts: ['Restart all CoreDNS pods immediately', 'Check the Corefile ConfigMap for the typo', 'Delete the CoreDNS deployment', 'Scale CoreDNS to 5 replicas'],
+      answer: 1,
+    },
+    {
+      time: '14:15',
+      event: 'Load test script creates a FlowSchema routing SA requests to a 1-share priority level.',
+      q: 'What action item prevents this in the future?',
+      opts: ['Disable all FlowSchemas', 'Add admission control to review FlowSchema changes', 'Remove ServiceAccounts from the cluster', 'Set all PriorityLevels to unlimited'],
+      answer: 1,
+    },
+    {
+      time: '14:20',
+      event: 'Monitoring shows etcd backend size at 80% of quota. Investigation reveals 2000 junk ConfigMaps.',
+      q: 'After deleting the junk, what else must be done?',
+      opts: ['Restart the API server', 'Run etcd compaction and defragmentation', 'Reinstall etcd from scratch', 'Increase the etcd quota to 1 GB'],
+      answer: 1,
+    },
+    {
+      time: '14:25',
+      event: 'Someone patched the ClusterQueue nominalQuota to 0 during "cost optimization".',
+      q: 'What is the postmortem action item?',
+      opts: ['Remove Kueue entirely', 'Add a validating webhook to prevent zero-quota ClusterQueues', 'Increase quota to infinity', 'Switch to a different job scheduler'],
+      answer: 1,
+    },
+  ];
+
+  function renderC5() {
+    var answers = {};
+    var locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      var card = mkCard('Postmortem Builder — Reconstruct the incident');
+
+      var sc = document.createElement('div');
+      sc.className = 'scenario';
+      sc.textContent = 'The incident is over. For each event in the timeline, answer the postmortem question.';
+      card.appendChild(sc);
+
+      for (var i = 0; i < C5_EVENTS.length; i++) {
+        (function(i) {
+          var ev = C5_EVENTS[i];
+          var block = document.createElement('div');
+          block.className = 'pm-block';
+
+          var label = document.createElement('div');
+          label.className = 'pm-label';
+          label.textContent = ev.time + ' UTC';
+          block.appendChild(label);
+
+          var eventDiv = document.createElement('div');
+          eventDiv.className = 'pm-event';
+          eventDiv.textContent = ev.event;
+          block.appendChild(eventDiv);
+
+          var qDiv = document.createElement('div');
+          qDiv.style.cssText = 'font-size:.86rem;color:var(--txt);margin-bottom:4px';
+          qDiv.textContent = ev.q;
+          block.appendChild(qDiv);
+
+          var btns = document.createElement('div');
+          btns.className = 'choice-btns';
+          btns.style.flexWrap = 'wrap';
+          for (var j = 0; j < ev.opts.length; j++) {
+            (function(j, i) {
+              var b = document.createElement('button');
+              b.className = 'choice-btn';
+              b.textContent = ev.opts[j];
+              b.disabled = locked;
+              b.style.fontSize = '.78rem';
+              if (answers['e' + i] === j) {
+                if (locked) {
+                  b.classList.add(j === ev.answer ? 'correct' : 'wrong');
+                } else {
+                  b.classList.add('selected');
+                }
+              } else if (locked && j === ev.answer) {
+                b.classList.add('correct');
+              }
+              b.onclick = function() {
+                if (locked) return;
+                answers['e' + i] = j;
+                render();
+              };
+              btns.appendChild(b);
+            })(j, i);
+          }
+          block.appendChild(btns);
+          card.appendChild(block);
+        })(i);
+      }
+
+      if (locked) {
+        var correct = 0;
+        for (var i = 0; i < C5_EVENTS.length; i++) {
+          if (answers['e' + i] === C5_EVENTS[i].answer) correct++;
+        }
+        var sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = '<span class="label">Score:</span><span class="val ' + (correct===6?'perfect':correct>=4?'partial':'low') + '">' + correct + '/6</span>';
+        card.appendChild(sb);
+        if (correct < 6) {
+          var fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'A good postmortem identifies the root cause (not the symptom), the correct first diagnostic step (evidence before action), and a preventive action item (not just "be more careful").';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+      $controls.innerHTML = '';
+      var allAnswered = Object.keys(answers).length === C5_EVENTS.length;
+      if (!locked) {
+        addBtn('Check Answers', function() { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        var span = document.createElement('span');
+        span.id = 'status';
+        span.textContent = '✓ All challenges complete';
+        span.style.color = 'var(--ok)';
+        $controls.appendChild(span);
+        $challenge.classList.add('success');
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     Challenge registry and navigation
+     ═══════════════════════════════════════════════════ */
+  var CHALLENGES = [
+    { goal: 'Rank the 6 faults by blast radius — which to fix first?', render: renderC1 },
+    { goal: 'Classify each kubectl command as evidence-gathering or state-changing action', render: renderC2 },
+    { goal: 'Match each observed symptom to the root cause that produced it', render: renderC3 },
+    { goal: 'Map each fault to the course module where the diagnostic skill was taught', render: renderC4 },
+    { goal: 'Answer postmortem questions for each event in the incident timeline', render: renderC5 },
+  ];
+
+  function renderDots() {
+    $dots.innerHTML = '';
+    for (var i = 0; i < CHALLENGES.length; i++) {
+      var d = document.createElement('div');
+      d.className = 'dot' + (i < challengeIdx ? ' done' : i === challengeIdx ? ' cur' : '');
+      d.textContent = i + 1;
+      $dots.appendChild(d);
+    }
+    $goal.textContent = CHALLENGES[challengeIdx].goal;
+    $challenge.classList.remove('success');
+  }
+
+  function mkCard(title) {
+    var card = document.createElement('div');
+    card.className = 'card';
+    var h2 = document.createElement('h2');
+    h2.textContent = title;
+    card.appendChild(h2);
+    return card;
+  }
+
+  function addBtn(text, handler, state) {
+    var btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = text;
+    if (state === 'disabled') { btn.disabled = true; }
+    btn.onclick = handler;
+    $controls.appendChild(btn);
+  }
+
+  function addNextBtn() {
+    if (challengeIdx < CHALLENGES.length - 1) {
+      var btn = document.createElement('button');
+      btn.className = 'btn ok';
+      btn.textContent = 'Next Challenge →';
+      btn.onclick = function() { challengeIdx++; renderDots(); CHALLENGES[challengeIdx].render(); };
+      $controls.appendChild(btn);
+    }
+  }
+
+  function init() {
+    challengeIdx = 0;
+    renderDots();
+    CHALLENGES[0].render();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

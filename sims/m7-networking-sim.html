@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Networking & Data Plane — Packet Path & Policy Simulator</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(11px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650}
+  header h1 .k8s{color:var(--accent)}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;margin-left:auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+
+  #main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+    display:flex;flex-direction:column;overflow:hidden}
+  .card h2{font-size:.85rem;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+  #scenario{grid-column:1/3}
+  #scenario .content{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .pod-box{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 10px;
+    min-width:100px;text-align:center}
+  .pod-box .name{font-weight:600;font-size:.9rem}
+  .pod-box .ip{font-family:var(--mono);font-size:.8rem;color:var(--faint)}
+  .pod-box .id{font-family:var(--mono);font-size:.75rem;color:var(--accent2)}
+  .arrow{color:var(--dim);font-size:1.2rem}
+  .arrow.ok{color:var(--ok)}
+  .arrow.drop{color:var(--bad)}
+  .svc-box{background:rgba(76,201,240,.08);border:1px solid rgba(76,201,240,.3);border-radius:6px;
+    padding:6px 10px;min-width:100px;text-align:center}
+  .svc-box .name{font-weight:600;font-size:.9rem;color:var(--accent)}
+
+  #flows{overflow-y:auto}
+  #flows .flow{font-family:var(--mono);font-size:.78rem;padding:2px 4px;border-radius:3px;margin-bottom:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #flows .flow.fwd{color:var(--ok);background:rgba(61,220,151,.06)}
+  #flows .flow.drop{color:var(--bad);background:rgba(255,107,107,.06)}
+  #flows .flow.dns{color:var(--accent);background:rgba(76,201,240,.06)}
+  #flows .flow.trace{color:var(--warn);background:rgba(245,185,66,.06)}
+
+  #controls{grid-column:1/3;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:5px 12px;font-size:.85rem;cursor:pointer;transition:all .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.active{border-color:var(--accent);background:rgba(76,201,240,.1)}
+  .btn.danger{border-color:var(--bad);color:var(--bad)}
+  .btn.danger:hover{background:rgba(255,107,107,.1)}
+  #status{font-family:var(--mono);font-size:.82rem;color:var(--dim);margin-left:auto}
+
+  #dns-panel{grid-column:1/3}
+  #dns-panel .resolv{font-family:var(--mono);font-size:.8rem;color:var(--faint);white-space:pre;
+    background:var(--panel2);border-radius:4px;padding:4px 8px;overflow-x:auto}
+  #dns-panel .queries{margin-top:6px}
+  #dns-panel .query{font-family:var(--mono);font-size:.78rem;padding:2px 4px;margin-bottom:2px;border-radius:3px}
+  #dns-panel .query.nxdomain{color:var(--bad);background:rgba(255,107,107,.06)}
+  #dns-panel .query.success{color:var(--ok);background:rgba(61,220,151,.06)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span class="k8s">K8s</span> Networking Sim</h1>
+    <button id="reset">Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Challenge</span>
+    <div class="steps" id="dots"></div>
+    <span class="txt" id="goal"></span>
+  </div>
+
+  <div id="main">
+    <div class="card" id="scenario">
+      <h2>Topology</h2>
+      <div class="content" id="topo"></div>
+    </div>
+    <div class="card" id="flows">
+      <h2>Hubble Flows</h2>
+    </div>
+    <div class="card" id="dns-panel" style="display:none">
+      <h2>DNS Resolution</h2>
+      <div class="resolv" id="resolv-conf"></div>
+      <div class="queries" id="dns-queries"></div>
+    </div>
+    <div id="controls"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const CHALLENGES = [
+    {goal:'Send traffic: frontend → backend (no policy)',steps:['deploy','curl','observe'],type:'baseline'},
+    {goal:'Apply default-deny NetworkPolicy',steps:['apply-deny','curl','observe-drop'],type:'deny'},
+    {goal:'Allow frontend → backend explicitly',steps:['apply-allow','curl','observe-fwd'],type:'allow'},
+    {goal:'Diagnose DNS ndots:5 expansion',steps:['resolve-external','count-queries'],type:'dns'},
+    {goal:'Fix with ndots:1',steps:['apply-fix','resolve-again'],type:'dns-fix'},
+  ];
+
+  const PODS = [
+    {name:'frontend',ip:'10.244.2.2',id:26061,labels:'app=frontend'},
+    {name:'backend-1',ip:'10.244.2.228',id:54397,labels:'app=backend'},
+    {name:'backend-2',ip:'10.244.1.146',id:54397,labels:'app=backend'},
+  ];
+  const SVC = {name:'backend',clusterIP:'10.96.249.10',port:80};
+
+  let state = {challenge:0, step:0, policies:[], flows:[], ndots:5};
+
+  function render(){
+    renderChallenge();
+    renderTopo();
+    renderFlows();
+    renderControls();
+    renderDNS();
+  }
+
+  function renderChallenge(){
+    const ch = CHALLENGES[state.challenge];
+    const dots = document.getElementById('dots');
+    const goal = document.getElementById('goal');
+    const el = document.getElementById('challenge');
+    dots.innerHTML = ch.steps.map((s,i)=>{
+      const cls = i < state.step ? 'dot done' : i === state.step ? 'dot cur' : 'dot';
+      return `<div class="${cls}">${i+1}</div>`;
+    }).join('');
+    goal.innerHTML = `<code>${state.challenge+1}/${CHALLENGES.length}</code> ${ch.goal}`;
+    el.className = state.step >= ch.steps.length ? 'success' : '';
+  }
+
+  function renderTopo(){
+    const topo = document.getElementById('topo');
+    const hasDeny = state.policies.includes('deny') && !state.policies.includes('allow');
+    const arrowCls = hasDeny ? 'arrow drop' : 'arrow ok';
+    const arrowChar = hasDeny ? '✗→' : '→';
+    topo.innerHTML = `
+      <div class="pod-box"><div class="name">frontend</div><div class="ip">${PODS[0].ip}</div><div class="id">ID:${PODS[0].id}</div></div>
+      <span class="${arrowCls}">${arrowChar}</span>
+      <div class="svc-box"><div class="name">svc/backend</div><div class="ip">${SVC.clusterIP}:${SVC.port}</div></div>
+      <span class="${arrowCls}">${arrowChar}</span>
+      <div class="pod-box"><div class="name">backend-1</div><div class="ip">${PODS[1].ip}</div><div class="id">ID:${PODS[1].id}</div></div>
+      ${state.policies.length ? `<div style="margin-left:20px;font-size:.8rem;color:var(--warn)">Policies: ${state.policies.join(', ')}</div>` : ''}
+    `;
+  }
+
+  function renderFlows(){
+    const el = document.getElementById('flows');
+    el.innerHTML = '<h2>Hubble Flows</h2>' + state.flows.map(f=>`<div class="flow ${f.type}">${f.text}</div>`).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function renderDNS(){
+    const panel = document.getElementById('dns-panel');
+    const ch = CHALLENGES[state.challenge];
+    if(ch.type !== 'dns' && ch.type !== 'dns-fix'){panel.style.display='none';return;}
+    panel.style.display='';
+    document.getElementById('resolv-conf').textContent = `search m7-lab.svc.cluster.local svc.cluster.local cluster.local\nnameserver 10.96.0.10\noptions ndots:${state.ndots}`;
+  }
+
+  function renderControls(){
+    const el = document.getElementById('controls');
+    const ch = CHALLENGES[state.challenge];
+    const currentStep = ch.steps[state.step];
+    let btns = '';
+
+    if(state.step >= ch.steps.length){
+      if(state.challenge < CHALLENGES.length - 1){
+        btns = `<button class="btn" onclick="SIM.next()">Next Challenge →</button>`;
+      } else {
+        btns = `<span style="color:var(--ok);font-weight:600">✓ All challenges complete!</span>`;
+      }
+    } else {
+      switch(currentStep){
+        case 'deploy': btns=`<button class="btn" onclick="SIM.deploy()">Deploy App</button>`;break;
+        case 'curl': btns=`<button class="btn" onclick="SIM.curl()">curl http://backend</button>`;break;
+        case 'observe': btns=`<button class="btn" onclick="SIM.advance()">✓ Observe flows</button>`;break;
+        case 'apply-deny': btns=`<button class="btn danger" onclick="SIM.applyDeny()">Apply default-deny</button>`;break;
+        case 'observe-drop': btns=`<button class="btn" onclick="SIM.advance()">✓ See DROPPED</button>`;break;
+        case 'apply-allow': btns=`<button class="btn" onclick="SIM.applyAllow()">Apply allow-frontend</button>`;break;
+        case 'observe-fwd': btns=`<button class="btn" onclick="SIM.advance()">✓ See FORWARDED</button>`;break;
+        case 'resolve-external': btns=`<button class="btn" onclick="SIM.resolveDNS('api.stripe.com')">Resolve api.stripe.com</button>`;break;
+        case 'count-queries': btns=`<button class="btn" onclick="SIM.advance()">✓ Count: 4 queries for 1 name</button>`;break;
+        case 'apply-fix': btns=`<button class="btn" onclick="SIM.fixNdots()">Set ndots:1</button>`;break;
+        case 'resolve-again': btns=`<button class="btn" onclick="SIM.resolveDNSFixed('api.stripe.com')">Resolve again</button>`;break;
+      }
+    }
+    el.innerHTML = btns + `<span id="status">${state.policies.length ? 'Policies: '+state.policies.join('+') : 'No policies'} | ndots:${state.ndots}</span>`;
+  }
+
+  function addFlow(type, text){
+    state.flows.push({type, text});
+    if(state.flows.length > 30) state.flows.shift();
+  }
+
+  window.SIM = {
+    deploy(){
+      addFlow('trace','[deploy] frontend (ID:26061) + backend×2 (ID:54397) → Ready');
+      state.step++;
+      render();
+    },
+    curl(){
+      const hasDeny = state.policies.includes('deny') && !state.policies.includes('allow');
+      if(hasDeny){
+        addFlow('dns','frontend:41884 (ID:26061) → coredns:53 FORWARDED (UDP)');
+        addFlow('dns','frontend:41884 (ID:26061) ← coredns:53 FORWARDED (UDP)');
+        addFlow('drop','frontend:53050 (ID:26061) <> backend-1:80 (ID:54397) Policy denied DROPPED (TCP SYN)');
+        addFlow('drop','frontend:53050 (ID:26061) <> backend-1:80 (ID:54397) Policy denied DROPPED (TCP SYN)');
+      } else {
+        addFlow('dns','frontend:58858 (ID:26061) → coredns:53 FORWARDED (UDP)');
+        addFlow('dns','frontend:58858 (ID:26061) ← coredns:53 FORWARDED (UDP)');
+        addFlow('trace','frontend (ID:26061) <> svc/backend:80 SOCK_XLATE TRACED (TCP)');
+        addFlow('fwd','frontend:49242 (ID:26061) → backend-1:80 (ID:54397) FORWARDED (TCP SYN)');
+        addFlow('fwd','frontend:49242 (ID:26061) ← backend-1:80 (ID:54397) FORWARDED (TCP SYN,ACK)');
+        addFlow('fwd','frontend:49242 (ID:26061) → backend-1:80 (ID:54397) FORWARDED (TCP ACK,PSH)');
+        addFlow('fwd','frontend:49242 (ID:26061) ← backend-1:80 (ID:54397) FORWARDED (TCP ACK,PSH)');
+        addFlow('fwd','frontend:49242 (ID:26061) → backend-1:80 (ID:54397) FORWARDED (TCP FIN)');
+      }
+      state.step++;
+      render();
+    },
+    applyDeny(){
+      state.policies.push('deny');
+      addFlow('trace','[policy] default-deny-ingress applied → all pods isolated');
+      state.step++;
+      render();
+    },
+    applyAllow(){
+      state.policies.push('allow');
+      addFlow('trace','[policy] allow-frontend-to-backend applied → frontend(26061)→backend(54397):80 permitted');
+      state.step++;
+      render();
+    },
+    resolveDNS(name){
+      const dots = name.split('.').length - 1;
+      const queries = document.getElementById('dns-queries');
+      const searches = ['m7-lab.svc.cluster.local','svc.cluster.local','cluster.local'];
+      let html = '';
+      if(dots < state.ndots){
+        for(const s of searches){
+          html += `<div class="query nxdomain">${name}.${s} → NXDOMAIN</div>`;
+          addFlow('dns',`frontend → coredns: ${name}.${s} → NXDOMAIN`);
+        }
+      }
+      html += `<div class="query success">${name}. → ✓ resolved</div>`;
+      addFlow('dns',`frontend → coredns: ${name}. → A 104.18.x.x`);
+      queries.innerHTML = html;
+      state.step++;
+      render();
+    },
+    fixNdots(){
+      state.ndots = 1;
+      addFlow('trace','[dnsConfig] ndots:5 → ndots:1');
+      document.getElementById('dns-queries').innerHTML = '';
+      state.step++;
+      render();
+    },
+    resolveDNSFixed(name){
+      const queries = document.getElementById('dns-queries');
+      queries.innerHTML = `<div class="query success">${name}. → ✓ resolved (direct, no search expansion)</div>`;
+      addFlow('dns',`frontend → coredns: ${name}. → A 104.18.x.x (1 query only)`);
+      state.step++;
+      render();
+    },
+    advance(){state.step++;render();},
+    next(){
+      state.challenge++;
+      state.step = 0;
+      render();
+    },
+    reset(){
+      state = {challenge:0, step:0, policies:[], flows:[], ndots:5};
+      render();
+    }
+  };
+
+  document.getElementById('reset').onclick = SIM.reset;
+  render();
+})();
+</script>
+</body>
+</html>

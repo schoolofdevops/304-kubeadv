@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheduler Playground — queue · filter · score · bind</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e; --line2:#1c2740;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(10.5px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  header h1 .k8s{color:var(--accent)}
+  #hsub{margin-left:auto;font-family:var(--mono);font-size:.8rem;color:var(--faint);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;min-height:24px;flex:0 0 auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  /* ---------- challenge banner ---------- */
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700;
+    background:transparent;padding:0;cursor:pointer}
+  #challenge .dot:hover{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+  #challenge.success .txt{white-space:normal;line-height:1.3}
+
+  /* ---------- main grid ---------- */
+  #main{flex:1 1 auto;display:grid;grid-template-columns:clamp(220px,19rem,320px) 1fr;gap:6px;min-height:0}
+  #main>.panel{min-width:0}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;min-height:0}
+  .panel h2{font-size:.76rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .panel h2 span{text-transform:none;letter-spacing:0;color:var(--faint);font-weight:400}
+
+  /* ---------- pod spec (left) ---------- */
+  #pod{display:flex;flex-direction:column;gap:6px;overflow:hidden}
+  .podcard{border:1px solid var(--accent);border-radius:9px;background:color-mix(in srgb,var(--accent) 8%,var(--panel2));
+    padding:6px 9px;display:flex;flex-direction:column;gap:5px}
+  .podcard .ph{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-weight:700;color:var(--accent);font-size:.9rem}
+  .podcard .ph .ico{font-size:1rem}
+  .ctl{display:flex;flex-direction:column;gap:3px}
+  .ctl .cl{font-family:var(--mono);font-size:.72rem;color:var(--dim);display:flex;justify-content:space-between;align-items:baseline}
+  .ctl .cl b{color:var(--txt);font-weight:700}
+  .step{display:flex;align-items:center;gap:6px}
+  .step button{width:1.7rem;height:1.7rem;border-radius:6px;border:1px solid var(--line);background:var(--panel2);
+    color:var(--txt);font-size:1rem;font-weight:700;cursor:pointer;flex:0 0 auto;line-height:1;padding:0}
+  .step button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+  .step button:disabled{opacity:.35;cursor:default}
+  .step .bar{flex:1;height:.6rem;border-radius:4px;background:var(--panel2);border:1px solid var(--line2);overflow:hidden;min-width:0}
+  .step .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .2s}
+  .step .cv{font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--accent);min-width:3.4ch;text-align:right}
+  .tog{display:flex;align-items:center;gap:7px;border:1px solid var(--line2);border-radius:7px;background:var(--panel2);
+    padding:4px 8px;cursor:pointer;font-family:var(--mono);font-size:.78rem;color:var(--dim);transition:border-color .15s,color .15s}
+  .tog:hover{border-color:var(--faint);color:var(--txt)}
+  .tog.on{border-color:var(--accent2);color:var(--txt);background:color-mix(in srgb,var(--accent2) 10%,var(--panel2))}
+  .tog .sw{width:1.9rem;height:1rem;border-radius:999px;background:var(--line);position:relative;flex:0 0 auto;transition:background .15s}
+  .tog.on .sw{background:var(--accent2)}
+  .tog .sw::after{content:"";position:absolute;top:1px;left:1px;width:calc(1rem - 2px);height:calc(1rem - 2px);
+    border-radius:50%;background:#0a0f1c;transition:left .15s}
+  .tog.on .sw::after{left:calc(1.9rem - 1rem + 1px)}
+  .tog .tl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .selrow{display:flex;gap:4px}
+  .selrow button{flex:1;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--dim);
+    font-family:var(--mono);font-size:.74rem;font-weight:700;padding:3px 4px;cursor:pointer;transition:border-color .15s,color .15s;min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .selrow button:hover{border-color:var(--faint);color:var(--txt)}
+  .selrow button.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--panel2))}
+  #schedBtn{width:100%;min-height:2rem;border-radius:8px;border:1px solid var(--ok);background:color-mix(in srgb,var(--ok) 10%,var(--panel2));
+    color:var(--ok);font-weight:700;font-size:.9rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+    transition:background .15s;margin-top:2px}
+  #schedBtn:hover:not(:disabled){background:color-mix(in srgb,var(--ok) 20%,var(--panel2))}
+  #schedBtn:disabled{opacity:.5;cursor:default}
+  #pending{display:none;flex-direction:column;gap:3px;border:1px dashed var(--bad);border-radius:8px;
+    background:rgba(255,107,107,.06);padding:5px 8px;margin-top:auto}
+  #pending.on{display:flex}
+  #pending .ph{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-weight:700;color:var(--bad);font-size:.82rem}
+  #pending .pr{font-family:var(--mono);font-size:.72rem;color:var(--txt);line-height:1.35}
+  #pending .pr b{color:var(--bad)}
+
+  /* ---------- pipeline + nodes (right) ---------- */
+  #stage{display:flex;flex-direction:column;min-height:0;gap:7px}
+  #pipe{flex:0 0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .ph-cell{border:1px solid var(--line2);border-radius:8px;background:var(--panel2);padding:4px 7px;position:relative;overflow:hidden}
+  .ph-cell .pn{font-family:var(--mono);font-size:.72rem;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+  .ph-cell .pd{font-family:var(--mono);font-size:.66rem;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ph-cell.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel2))}
+  .ph-cell.active .pn{color:var(--accent)}
+  .ph-cell.done{border-color:var(--line)}
+  .ph-cell .pod-token{position:absolute;right:6px;top:4px;font-size:.9rem;opacity:0;transition:opacity .2s}
+  .ph-cell.active .pod-token{opacity:1}
+  #nodesWrap{flex:1;display:flex;flex-direction:column;min-height:0}
+  #nodesWrap .colh{font-size:.64rem;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--faint);
+    margin-bottom:4px;white-space:nowrap;cursor:default}
+  #nodes{flex:1;display:grid;gap:6px;min-height:0;
+    grid-template-columns:repeat(auto-fit,minmax(clamp(120px,13rem,190px),1fr));align-content:start}
+  .node{border:1px solid var(--line2);border-radius:9px;background:var(--panel2);padding:6px 8px;
+    display:flex;flex-direction:column;gap:5px;min-width:0;position:relative;transition:border-color .2s,box-shadow .2s}
+  .node .nh{display:flex;align-items:center;gap:6px}
+  .node .nh .nn{font-family:var(--mono);font-weight:700;color:var(--txt);font-size:.86rem;white-space:nowrap}
+  .node .nh .badge{margin-left:auto;font-family:var(--mono);font-size:.64rem;font-weight:700;letter-spacing:.4px;
+    padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--faint);white-space:nowrap}
+  .node.out{border-color:var(--bad);box-shadow:0 0 0 1px rgba(255,107,107,.25)}
+  .node.out .badge{border-color:var(--bad);color:var(--bad)}
+  .node.pass{border-color:var(--line)}
+  .node.pass .badge{border-color:var(--ok);color:var(--ok)}
+  .node.winner{border-color:var(--ok);box-shadow:0 0 10px rgba(61,220,151,.4)}
+  .node.winner .badge{border-color:var(--ok);color:var(--ok);background:rgba(61,220,151,.12)}
+  .capbar{height:.85rem;border-radius:4px;background:#0a0f1c;border:1px solid var(--line2);position:relative;overflow:hidden}
+  .capbar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:3px;transition:width .25s}
+  .capbar i.req{background:repeating-linear-gradient(45deg,rgba(245,185,66,.55) 0 5px,rgba(245,185,66,.2) 5px 10px)}
+  .capbar i.over{background:repeating-linear-gradient(45deg,rgba(255,107,107,.6) 0 5px,rgba(255,107,107,.22) 5px 10px)}
+  .caplbl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.66rem;color:var(--dim)}
+  .caplbl .capedit{display:flex;align-items:center;gap:3px}
+  .caplbl .capedit button{width:1.15rem;height:1.15rem;border-radius:4px;border:1px solid var(--line);background:none;
+    color:var(--dim);font-size:.8rem;font-weight:700;cursor:pointer;line-height:1;padding:0}
+  .caplbl .capedit button:hover{border-color:var(--accent);color:var(--accent)}
+  .ntags{display:flex;flex-wrap:wrap;gap:3px}
+  .chip{font-family:var(--mono);font-size:.64rem;padding:1px 6px;border-radius:5px;border:1px solid var(--line2);
+    color:var(--dim);background:#0a0f1c;white-space:nowrap;cursor:default}
+  .chip.lbl{border-color:#2e5f78;color:var(--accent)}
+  .chip.taint{border-color:#5a4a2a;color:var(--warn);cursor:pointer}
+  .chip.taint:hover{border-color:var(--warn)}
+  .chip.taint:focus-visible{outline:2px solid var(--warn);outline-offset:2px}
+  .chip.taint.off{opacity:.65}
+  .chip.score{margin-left:auto;border-color:var(--ok);color:var(--ok);font-weight:700}
+  .node .reason{font-family:var(--mono);font-size:.68rem;color:var(--bad);white-space:normal;line-height:1.3;min-height:0}
+  .node .landed{position:absolute;inset:0;display:none;align-items:center;justify-content:center;flex-direction:column;gap:2px;
+    background:rgba(61,220,151,.1);border-radius:9px;font-family:var(--mono);color:var(--ok);font-weight:700;font-size:.9rem}
+  .node.winner .landed{display:flex}
+  .node .landed small{color:var(--dim);font-weight:400;font-size:.66rem}
+
+  /* ---------- event log ---------- */
+  #events{flex:0 0 clamp(80px,7rem,124px);display:flex;flex-direction:column;min-height:0}
+  #events,#events *{cursor:default}
+  #evList{flex:1;overflow-y:auto;font-family:var(--mono);font-size:.78rem;line-height:1.6;scrollbar-width:thin}
+  .ev{display:flex;gap:8px;white-space:nowrap;overflow:hidden}
+  .ev .et{color:var(--faint);flex:0 0 3.6rem}
+  .ev .er{flex:0 0 4.6rem;color:var(--accent2);font-weight:700}
+  .ev.pass .er{color:var(--ok)}
+  .ev.out .er{color:var(--bad)}
+  .ev .em{flex:1;color:var(--txt);opacity:.9;overflow:hidden;text-overflow:ellipsis}
+  .ev.new{animation:evin .4s ease-out}
+  @keyframes evin{0%{background:rgba(76,201,240,.12)}100%{background:transparent}}
+  #note{margin-left:auto;font-size:1rem;color:var(--faint);cursor:help;position:relative;padding:0 4px}
+  #note:hover{color:var(--dim)}
+  #note:hover::after,#note:active::after{content:attr(data-tip);position:absolute;right:0;bottom:calc(100% + 7px);
+    z-index:40;width:40ch;background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.82rem/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+
+  /* narrow fallback: stack + allow scroll rather than clip */
+  @media (max-width:620px){
+    body{overflow:auto}
+    #main{grid-template-columns:1fr}
+    #app{height:auto;min-height:100%}
+    #nodes{grid-template-columns:1fr 1fr}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1><span class="k8s">⎈</span> Scheduler Playground</h1>
+    <span id="hsub">queue → filter → score → bind · a Pod goes Pending when every node fails filter</span>
+    <button id="reset" title="Reset the simulator">↺ Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Try this</span>
+    <span class="steps">
+      <button type="button" class="dot" id="d1" role="button" tabindex="0" data-step="1" aria-label="Show Step 1 instructions">1</button>
+      <button type="button" class="dot" id="d2" role="button" tabindex="0" data-step="2" aria-label="Show Step 2 instructions">2</button>
+      <button type="button" class="dot" id="d3" role="button" tabindex="0" data-step="3" aria-label="Show Step 3 instructions">3</button>
+    </span>
+    <span class="txt" id="chTxt"></span>
+  </div>
+
+  <div id="main">
+    <!-- LEFT: pod spec -->
+    <div class="panel" id="pod">
+      <h2>Pod spec <span>· web-59f</span></h2>
+      <div class="podcard">
+        <div class="ph"><span class="ico">◈</span> web-59f</div>
+
+        <div class="ctl" title="spec.containers[].resources.requests.cpu — the CPU the scheduler must find free on a node. Filtered by the NodeResourcesFit plugin.">
+          <div class="cl">requests.cpu <b><span id="cpuVal">500</span>m</b></div>
+          <div class="step">
+            <button id="cpuDown" title="lower cpu request by 250m">−</button>
+            <div class="bar"><i id="cpuBar"></i></div>
+            <button id="cpuUp" title="raise cpu request by 250m">+</button>
+            <span class="cv"><span id="cpuMv">0.5</span></span>
+          </div>
+        </div>
+
+        <div class="ctl" title="spec.nodeSelector — the Pod only fits nodes carrying this label. Filtered by the NodeAffinity plugin.">
+          <div class="cl">nodeSelector</div>
+          <div class="selrow" id="selRow">
+            <button data-sel="" class="on" title="no selector — any node matches">none</button>
+            <button data-sel="disktype=ssd" title="disktype=ssd — some nodes match">disktype=ssd</button>
+            <button data-sel="gpu=true" title="gpu=true — NO node here carries this label">gpu=true</button>
+          </div>
+        </div>
+
+        <div class="tog" id="tolTog" title="spec.tolerations — lets the Pod schedule onto nodes carrying the matching taint. Without it, the TaintToleration plugin filters those nodes out.">
+          <span class="sw"></span>
+          <span class="tl">tolerate <code style="color:var(--warn)">team=ml:NoSchedule</code></span>
+        </div>
+
+        <button id="schedBtn" title="Run the scheduler: push web-59f through queue → filter → score → bind.">▶ Schedule Pod</button>
+
+        <div id="pending">
+          <div class="ph"><span>⏸</span> Pod Pending</div>
+          <div class="pr" id="pendReason"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: pipeline + nodes -->
+    <div class="panel" id="stage">
+      <div id="pipe">
+        <div class="ph-cell" id="phQueue"><div class="pn">1 · Queue</div><div class="pd">activeQ → pop</div><span class="pod-token">◈</span></div>
+        <div class="ph-cell" id="phFilter"><div class="pn">2 · Filter</div><div class="pd">feasible nodes</div><span class="pod-token">◈</span></div>
+        <div class="ph-cell" id="phScore"><div class="pn">3 · Score</div><div class="pd">rank feasible</div><span class="pod-token">◈</span></div>
+        <div class="ph-cell" id="phBind"><div class="pn">4 · Bind</div><div class="pd">pod → node</div><span class="pod-token">◈</span></div>
+      </div>
+      <div id="nodesWrap">
+        <div class="colh">Nodes — capacity · labels · taints (click + taint to add or remove it)</div>
+        <div id="nodes"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="events">
+    <h2>Scheduler events <span>— kube-scheduler decision trace</span>
+      <span id="note" data-tip="Honest-model note: the real kube-scheduler runs ~20 filter/score plugins (NodeResourcesFit, NodeAffinity, TaintToleration, PodTopologySpread, InterPodAffinity, and more), plus preemption, a two-phase scheduling cycle, and a PostBind hook. This sim shows the core loop — one filter set, one simple score (most free CPU wins) — so the queue→filter→score→bind shape and the FailedScheduling reasons match what you see in `kubectl describe pod`.">ⓘ</span></h2>
+    <div id="evList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id)};
+
+  /* ------------------------------------------------------------------ model */
+  var CPU_STEPS=[250,500,750,1000,1250,1500,2000,3000,4000];
+  var TAINT='team=ml:NoSchedule';
+  function freshNodes(){
+    return [
+      {id:'node-a',cap:2000,used:800,labels:['disktype=ssd'],taint:null,taintOn:false},
+      {id:'node-b',cap:4000,used:1000,labels:['disktype=ssd','zone=east'],taint:null,taintOn:false},
+      {id:'node-c',cap:2000,used:500,labels:['zone=west'],taint:null,taintOn:false},
+      {id:'node-d',cap:1000,used:200,labels:['zone=east'],taint:TAINT,taintOn:true}
+    ];
+  }
+  var S={
+    cpu:500, selector:'', tolerate:false,
+    nodes:freshNodes(),
+    phase:0,        /* 0 idle, 1 queue,2 filter,3 score,4 bind */
+    result:null,    /* {bound:'node-b'} or {pending:true,reasons:{...}} */
+    t0:Date.now()
+  };
+  var CH={step:1, view:1, done:[false,false,false], everBound:false};
+
+  /* ------------------------------------------------------------------ events log */
+  var evList=$('evList');
+  function clock(){var s=Math.floor((Date.now()-S.t0)/1000);return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+  function logEv(kind,reason,msg){
+    var d=document.createElement('div');
+    d.className='ev new '+(kind==='out'?'out':kind==='pass'?'pass':'');
+    d.innerHTML='<span class="et">'+clock()+'</span><span class="er"></span><span class="em"></span>';
+    d.children[1].textContent=reason; d.children[2].textContent=msg;
+    d.title=reason+'  —  '+msg;
+    evList.appendChild(d);
+    while(evList.children.length>90)evList.removeChild(evList.firstChild);
+    evList.scrollTop=evList.scrollHeight;
+  }
+
+  /* ------------------------------------------------------------------ scheduling core
+     A node is FEASIBLE iff it passes ALL filters:
+       fit      : node.cap - node.used >= pod.cpu     (NodeResourcesFit)
+       selector : pod.selector=='' OR node.labels includes it  (NodeAffinity)
+       taint    : node has no active NoSchedule taint OR pod tolerates it (TaintToleration)
+     Score of a feasible node = free CPU after placing the pod (most-free wins). */
+  function evalNode(n){
+    var free=n.cap-n.used;
+    var reasons=[];
+    if(free<S.cpu) reasons.push('Insufficient cpu');
+    if(S.selector && n.labels.indexOf(S.selector)===-1) reasons.push("didn't match Pod's node selector");
+    if(n.taint && n.taintOn && !S.tolerate) reasons.push('untolerated taint {'+n.taint+'}');
+    return {node:n, free:free, feasible:reasons.length===0, reasons:reasons,
+            score: reasons.length===0 ? (free-S.cpu) : -1};
+  }
+  /* Combined FailedScheduling message, mirroring kube-scheduler's tally. */
+  function combineReasons(evals){
+    var tally={};
+    evals.forEach(function(e){e.reasons.forEach(function(r){
+      var key=r.replace(/\{[^}]*\}/,'').trim();
+      tally[key]=(tally[key]||0)+1;
+    })});
+    var parts=Object.keys(tally).map(function(k){return tally[k]+' node(s) '+k});
+    return '0/'+S.nodes.length+' nodes are available: '+parts.join(', ')+'.';
+  }
+
+  /* pure evaluation the harness can call without animation */
+  function computeResult(){
+    var evals=S.nodes.map(evalNode);
+    var feasible=evals.filter(function(e){return e.feasible});
+    if(!feasible.length){
+      return {evals:evals, pending:true, reason:combineReasons(evals)};
+    }
+    feasible.sort(function(a,b){return b.score-a.score});
+    return {evals:evals, pending:false, winner:feasible[0].node.id, feasible:feasible};
+  }
+
+  /* ------------------------------------------------------------------ run the pipeline (animated) */
+  var running=false, timers=[];
+  function clearTimers(){timers.forEach(clearTimeout);timers=[]}
+  function later(fn,ms){var t=setTimeout(fn,ms);timers.push(t);return t}
+  function REDUCED(){return window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches}
+
+  function setPhase(p){S.phase=p;renderPipe()}
+
+  function schedule(fast){
+    if(running)return;
+    running=true; clearTimers();
+    S.result=null;
+    S.nodes.forEach(function(n){n._state=null;n._score=null;n._reasons=null});
+    $('pending').classList.remove('on');
+    render();
+    var res=computeResult();
+    var step=fast||REDUCED()?0:520;
+
+    setPhase(1);
+    logEv('info','queue','web-59f popped from activeQ (unschedulable pods retry here)');
+
+    later(function(){
+      setPhase(2);
+      logEv('info','filter','running NodeResourcesFit · NodeAffinity · TaintToleration over '+S.nodes.length+' nodes');
+      res.evals.forEach(function(e){
+        if(e.feasible){e.node._state='pass';
+          logEv('pass','filter',e.node.id+' OK (fit '+e.free+'m free ≥ '+S.cpu+'m)');
+        }else{e.node._state='out'; e.node._reasons=e.reasons;
+          logEv('out','filter',e.node.id+' OUT ('+e.reasons.join('; ')+')');
+        }
+      });
+      render();
+
+      later(function(){
+        if(res.pending){
+          setPhase(0);
+          S.result={pending:true,reason:res.reason};
+          logEv('out','Pending','FailedScheduling — '+res.reason);
+          $('pendReason').innerHTML='<b>FailedScheduling</b><br>'+res.reason;
+          $('pending').classList.add('on');
+          running=false; finish();
+          return;
+        }
+        setPhase(3);
+        res.feasible.forEach(function(e){e.node._score=e.score;
+          logEv('pass','score',e.node.id+' scored '+scoreOut(e)+' (most free CPU wins)');
+        });
+        render();
+
+        later(function(){
+          setPhase(4);
+          var w=res.winner;
+          S.nodes.forEach(function(n){if(n.id===w){n._state='winner';n.used+=S.cpu}});
+          S.result={bound:w};
+          CH.everBound=true;
+          logEv('pass','bind','web-59f → '+w+' · Scheduled (pod bound, kubelet will start it)');
+          render();
+          later(function(){setPhase(0);running=false;finish();},step);
+        },step);
+      },step);
+    },step);
+  }
+  function scoreOut(e){ /* present score as 0..100 for readability */
+    var maxFree=Math.max.apply(null,S.nodes.map(function(n){return n.cap-n.used-S.cpu}));
+    if(maxFree<=0)return 50;
+    return Math.round(e.score/maxFree*100);
+  }
+  function finish(){ evalChallenge(); render(); }
+
+  /* ------------------------------------------------------------------ render */
+  function cpuIdx(){return CPU_STEPS.indexOf(S.cpu)}
+  function renderPod(){
+    $('cpuVal').textContent=S.cpu;
+    $('cpuMv').textContent=(S.cpu/1000).toString();
+    $('cpuBar').style.width=Math.min(100,S.cpu/4000*100)+'%';
+    $('cpuDown').disabled=running||cpuIdx()<=0;
+    $('cpuUp').disabled=running||cpuIdx()>=CPU_STEPS.length-1;
+    var sr=$('selRow').children;
+    for(var i=0;i<sr.length;i++)sr[i].classList.toggle('on',sr[i].dataset.sel===S.selector);
+    $('tolTog').classList.toggle('on',S.tolerate);
+    $('schedBtn').disabled=running;
+    $('schedBtn').textContent=running?'⏳ scheduling…':'▶ Schedule Pod';
+  }
+  function renderPipe(){
+    [['phQueue',1],['phFilter',2],['phScore',3],['phBind',4]].forEach(function(p){
+      var el=$(p[0]);
+      el.classList.toggle('active',S.phase===p[1]);
+      el.classList.toggle('done',S.phase>p[1]&&S.phase!==0);
+    });
+  }
+  var nodeEls={};
+  function buildNodes(){
+    var box=$('nodes');box.innerHTML='';nodeEls={};
+    S.nodes.forEach(function(n){
+      var d=document.createElement('div');
+      d.className='node';d.dataset.node=n.id;
+      d.innerHTML=
+        '<div class="nh"><span class="nn">'+n.id+'</span><span class="badge"></span></div>'+
+        '<div class="capbar"><i class="cap"></i></div>'+
+        '<div class="caplbl"><span class="cl2"></span>'+
+          '<span class="capedit"><button class="capdn" title="lower node CPU capacity by 1 core">−</button>'+
+          '<button class="capup" title="raise node CPU capacity by 1 core">+</button></span></div>'+
+        '<div class="ntags"></div>'+
+        '<div class="reason"></div>'+
+        '<div class="landed">✔ Running<small>bound here</small></div>';
+      box.appendChild(d);
+      d.querySelector('.capup').addEventListener('click',function(){if(!running){n.cap+=1000;afterEdit()}});
+      d.querySelector('.capdn').addEventListener('click',function(){if(!running&&n.cap>1000){n.cap-=1000;afterEdit()}});
+      nodeEls[n.id]={el:d,badge:d.querySelector('.badge'),cap:d.querySelector('.cap'),
+        cl2:d.querySelector('.cl2'),tags:d.querySelector('.ntags'),reason:d.querySelector('.reason')};
+    });
+  }
+  function renderNodes(){
+    S.nodes.forEach(function(n){
+      var e=nodeEls[n.id],free=n.cap-n.used;
+      e.el.classList.remove('out','pass','winner');
+      if(n._state)e.el.classList.add(n._state);
+      /* capacity bar: used vs req vs cap */
+      var usedPct=Math.min(100,n.used/n.cap*100);
+      var reqPct=Math.min(100,(n.used+S.cpu)/n.cap*100);
+      var over=(n.used+S.cpu)>n.cap;
+      e.cap.style.width=usedPct+'%';
+      e.cap.className='cap'+(over?' over':'');
+      /* second layer: the request slice, drawn as border marker via title */
+      e.cl2.textContent='used '+n.used+'m · free '+free+'m · cap '+n.cap+'m';
+      /* badge */
+      if(n._state==='winner'){e.badge.textContent='BOUND';}
+      else if(n._state==='out'){e.badge.textContent='FILTERED';}
+      else if(n._state==='pass'){e.badge.textContent=(n._score!=null?'score '+scoreOut({score:n._score}):'FEASIBLE');}
+      else{e.badge.textContent=free>=S.cpu?'fits':'tight';}
+      /* tags */
+      var t=e.tags;t.innerHTML='';
+      n.labels.forEach(function(l){
+        var c=document.createElement('span');c.className='chip lbl';c.textContent=l;
+        c.title='node label — matched by a nodeSelector or nodeAffinity';t.appendChild(c);
+      });
+      var tc=document.createElement('button');
+      tc.type='button';tc.className='chip taint'+(n.taintOn?'':' off');
+      tc.textContent=n.taintOn?'taint '+TAINT:'+ taint '+TAINT;
+      tc.title=n.taintOn?'NoSchedule taint — click to remove it from this node':'Add team=ml:NoSchedule to this node';
+      tc.setAttribute('aria-label',n.taintOn?'Remove '+TAINT+' from '+n.id:'Add '+TAINT+' to '+n.id);
+      tc.setAttribute('aria-pressed',n.taintOn?'true':'false');
+      tc.addEventListener('click',function(){if(!running){n.taint=n.taint||TAINT;n.taintOn=!n.taintOn;afterEdit()}});
+      t.appendChild(tc);
+      if(n._score!=null){
+        var sc=document.createElement('span');sc.className='chip score';sc.textContent='★ '+scoreOut({score:n._score});
+        sc.title='node score — most free CPU after placement wins';t.appendChild(sc);
+      }
+      e.reason.textContent=(n._state==='out'&&n._reasons)?('✗ '+n._reasons.join('; ')):'';
+    });
+  }
+  function render(){renderPod();renderPipe();renderNodes();updateChallenge();}
+  function afterEdit(){ if(S.result&&S.result.bound){var n=S.nodes.filter(function(x){return x.id===S.result.bound})[0];} render(); }
+
+  /* ------------------------------------------------------------------ challenge */
+  var CH_TEXT=[
+    'Step 1 — Raise <code>requests.cpu</code> until <b>every</b> node fails filter → Pod goes <code>Pending</code> with <code>Insufficient cpu</code>. Drop it back so it binds again.',
+    'Step 2 — Set <code>nodeSelector: gpu=true</code> (no node carries it) and schedule → <code>Pending: didn\'t match selector</code>.',
+    'Step 3 — Give <b>every</b> node the <code>team=ml:NoSchedule</code> taint, schedule → <code>untolerated taint</code>; then flip on the toleration → it binds.'
+  ];
+  var SUCCESS='Challenge complete! A Pod is only <b>Pending</b> because the <b>filter</b> stage rejected every node — for a concrete reason: not enough CPU, no matching label, or an untolerated taint. Fix that reason (add capacity, match the label, tolerate the taint) and the same Pod flows through <b>score</b> and <b>binds</b>. That combined line is exactly the <code>FailedScheduling</code> message <code>kubectl describe pod</code> shows you.';
+
+  /* auto-detect from model state, not click counting */
+  function evalChallenge(){
+    if(!S.result)return;
+    var pending=!!S.result.pending, reason=pending?S.result.reason:'';
+    if(CH.step===1){
+      if(pending&&/Insufficient cpu/.test(reason)&&/0\/4/.test(reason)){CH.done[0]=true;CH.step=2;CH.view=2;
+        logEv('info','try-this','Step 1 done — all nodes failed the CPU fit filter. Lower the request to bind.');}
+    }else if(CH.step===2){
+      if(pending&&/match/.test(reason)&&/selector/.test(reason)){CH.done[1]=true;CH.step=3;CH.view=3;
+        logEv('info','try-this','Step 2 done — no node carried the label the selector demanded.');}
+    }else if(CH.step===3){
+      /* completes when: it BINDS while every node carries the taint AND toleration is on */
+      var allTainted=S.nodes.every(function(n){return n.taint&&n.taintOn});
+      if(!pending&&S.result.bound&&allTainted&&S.tolerate){CH.done[2]=true;CH.step=4;}
+      else if(pending&&/untolerated taint/.test(reason)){
+        logEv('info','try-this','Untolerated taint on every node → Pending. Now flip the toleration on and schedule.');
+      }
+    }
+    updateChallenge();
+  }
+  function updateChallenge(){
+    for(var i=1;i<=3;i++){
+      var d=$('d'+i);d.className='dot'+(CH.done[i-1]?' done':'')+(CH.view===i?' cur':'');
+      d.textContent=CH.done[i-1]?'✓':i;
+      d.setAttribute('aria-current',CH.view===i?'step':'false');
+    }
+    var box=$('challenge'),txt=$('chTxt');
+    if(CH.step>=4){box.classList.add('success');txt.innerHTML=SUCCESS;}
+    else{box.classList.remove('success');txt.innerHTML=CH_TEXT[CH.view-1];}
+  }
+
+  /* ------------------------------------------------------------------ controls */
+  $('cpuUp').addEventListener('click',function(){var i=cpuIdx();if(i<CPU_STEPS.length-1&&!running){S.cpu=CPU_STEPS[i+1];clearResult();render()}});
+  $('cpuDown').addEventListener('click',function(){var i=cpuIdx();if(i>0&&!running){S.cpu=CPU_STEPS[i-1];clearResult();render()}});
+  Array.prototype.forEach.call($('selRow').children,function(b){
+    b.addEventListener('click',function(){if(!running){S.selector=b.dataset.sel;clearResult();render()}});
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#challenge .dot'),function(dot){
+    function selectStep(){CH.view=Number(dot.dataset.step);updateChallenge()}
+    dot.addEventListener('click',selectStep);
+    dot.addEventListener('keydown',function(e){
+      if(e.key==='Enter'||e.key===' '){e.preventDefault();selectStep()}
+    });
+  });
+  $('tolTog').addEventListener('click',function(){if(!running){S.tolerate=!S.tolerate;clearResult();render()}});
+  $('schedBtn').addEventListener('click',function(){schedule(false)});
+  $('reset').addEventListener('click',function(){location.reload()});
+  window.addEventListener('resize',function(){renderNodes()});
+  function clearResult(){S.result=null;$('pending').classList.remove('on');
+    S.nodes.forEach(function(n){n._state=null;n._score=null;n._reasons=null});}
+
+  /* ------------------------------------------------------------------ boot */
+  buildNodes();
+  render();
+  logEv('info','ready','scheduler up · 4 nodes registered · set the Pod spec and press Schedule');
+
+  /* test hook (harmless in production) */
+  window.__sched={S:S,CH:CH,
+    setCpu:function(m){S.cpu=m;clearResult();render()},
+    setSelector:function(s){S.selector=s;clearResult();render()},
+    setTolerate:function(b){S.tolerate=b;clearResult();render()},
+    setTaintAll:function(b){S.nodes.forEach(function(n){n.taint=n.taint||TAINT;n.taintOn=b});clearResult();render()},
+    setNodeCap:function(id,c){S.nodes.forEach(function(n){if(n.id===id)n.cap=c});clearResult();render()},
+    schedule:function(){schedule(true)},   /* fast/instant path for tests */
+    compute:computeResult,
+    isRunning:function(){return running}
+  };
+})();
+</script>
+</body>
+</html>

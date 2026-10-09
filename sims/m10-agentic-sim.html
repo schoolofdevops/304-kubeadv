@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agentic Kubernetes Simulator</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(11px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow-x:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650}
+  header h1 .k8s{color:var(--accent)}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;margin-left:auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+
+  #main{flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;overflow-y:auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;
+    display:flex;flex-direction:column}
+  .card h2{font-size:.85rem;color:var(--dim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+
+  /* RBAC display */
+  .rbac-box{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;
+    font-family:var(--mono);font-size:.82rem;color:var(--accent);margin-bottom:8px;overflow-x:auto;white-space:pre}
+
+  /* Operation rows */
+  .op-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:4px;
+    background:var(--panel2);border:1px solid var(--line)}
+  .op-row .op-verb{font-family:var(--mono);font-size:.82rem;font-weight:700;min-width:55px}
+  .op-row .op-verb.read{color:var(--ok)}
+  .op-row .op-verb.write{color:var(--bad)}
+  .op-row .op-desc{flex:1;font-size:.88rem;color:var(--txt)}
+  .op-row .op-result{font-size:.82rem;font-weight:700;min-width:70px;text-align:center;padding:2px 8px;border-radius:4px}
+
+  /* Button choices */
+  .choice-btns{display:flex;gap:6px}
+  .choice-btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:4px 12px;font-size:.84rem;cursor:pointer;transition:all .15s}
+  .choice-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .choice-btn.selected{border-color:var(--accent2);color:var(--accent2);background:rgba(123,108,246,.12)}
+  .choice-btn.correct{border-color:var(--ok);color:var(--ok);background:rgba(61,220,151,.1)}
+  .choice-btn.wrong{border-color:var(--bad);color:var(--bad);background:rgba(255,107,107,.1)}
+  .choice-btn:disabled{cursor:not-allowed;opacity:.7}
+
+  /* Ordered list for drag */
+  .order-list{list-style:none;counter-reset:item}
+  .order-list li{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;margin-bottom:4px;
+    background:var(--panel2);border:1px solid var(--line);cursor:pointer;user-select:none;transition:background .15s}
+  .order-list li:hover{background:rgba(76,201,240,.06)}
+  .order-list li.dragging{opacity:.4;border-color:var(--accent)}
+  .order-list li .idx{font-family:var(--mono);font-size:.78rem;font-weight:700;color:var(--faint);min-width:18px}
+  .order-list li .stage-name{font-weight:600;color:var(--accent);font-size:.88rem;min-width:70px}
+  .order-list li .stage-desc{color:var(--dim);font-size:.84rem}
+  .order-list li.correct-pos{border-color:var(--ok);background:rgba(61,220,151,.06)}
+  .order-list li.wrong-pos{border-color:var(--bad);background:rgba(255,107,107,.06)}
+
+  /* JSON snippets */
+  .json-box{background:#0a0e18;border:1px solid var(--line);border-radius:6px;padding:6px 8px;
+    font-family:var(--mono);font-size:.78rem;color:var(--dim);margin-bottom:6px;overflow-x:auto;white-space:pre}
+  .json-box .key{color:var(--accent)}
+  .json-box .str{color:var(--ok)}
+  .json-box .num{color:var(--warn)}
+
+  /* Tier classification */
+  .tier-grid{display:grid;grid-template-columns:1fr;gap:4px}
+  .tier-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;
+    background:var(--panel2);border:1px solid var(--line)}
+  .tier-item .op-text{flex:1;font-size:.88rem}
+  .tier-item .tier-select{display:flex;gap:4px}
+  .tier-btn{font-size:.76rem;padding:2px 8px;border-radius:4px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);cursor:pointer;transition:all .15s}
+  .tier-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .tier-btn.t1.sel{border-color:var(--ok);color:var(--ok);background:rgba(61,220,151,.1)}
+  .tier-btn.t2.sel{border-color:var(--warn);color:var(--warn);background:rgba(245,185,66,.1)}
+  .tier-btn.t3.sel{border-color:var(--bad);color:var(--bad);background:rgba(255,107,107,.1)}
+  .tier-btn:disabled{cursor:not-allowed;opacity:.7}
+
+  /* Audit entries */
+  .audit-entry{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:6px}
+  .audit-json{font-family:var(--mono);font-size:.76rem;color:var(--dim);margin-bottom:6px;
+    background:#0a0e18;padding:4px 6px;border-radius:4px;overflow-x:auto;white-space:pre}
+  .audit-q{font-size:.84rem;color:var(--txt);margin-bottom:4px}
+
+  #controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 0}
+  .btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;
+    padding:5px 12px;font-size:.85rem;cursor:pointer;transition:all .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.primary{border-color:var(--accent);color:var(--accent)}
+  .btn.ok{border-color:var(--ok);color:var(--ok)}
+  #status{font-family:var(--mono);font-size:.82rem;color:var(--dim);margin-left:auto}
+
+  .score-bar{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .score-bar .label{font-size:.82rem;color:var(--dim)}
+  .score-bar .val{font-family:var(--mono);font-size:.92rem;font-weight:700}
+  .score-bar .val.perfect{color:var(--ok)}
+  .score-bar .val.partial{color:var(--warn)}
+  .score-bar .val.low{color:var(--bad)}
+
+  .feedback{font-size:.82rem;color:var(--dim);margin-top:4px;padding:4px 8px;
+    background:rgba(76,201,240,.04);border-radius:4px;border-left:2px solid var(--accent)}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span class="k8s">Agentic</span> Kubernetes Sim</h1>
+    <button id="reset">Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Challenge</span>
+    <div class="steps" id="dots"></div>
+    <span class="txt" id="goal"></span>
+  </div>
+
+  <div id="main"></div>
+  <div id="controls"></div>
+</div>
+
+<script>
+(function(){
+  const $dots = document.getElementById('dots');
+  const $goal = document.getElementById('goal');
+  const $challenge = document.getElementById('challenge');
+  const $main = document.getElementById('main');
+  const $controls = document.getElementById('controls');
+  document.getElementById('reset').onclick = () => init();
+
+  let challengeIdx = 0;
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 1: Badge Check — RBAC prediction
+     ═══════════════════════════════════════════════════ */
+  const C1_ROLE = {
+    name: 'ai-agent-readonly',
+    rules: [
+      { groups: '""', resources: 'pods, services, events, nodes', verbs: 'get, list, watch' },
+      { groups: '"apps"', resources: 'deployments, replicasets', verbs: 'get, list, watch' },
+    ]
+  };
+  const C1_OPS = [
+    { verb: 'list', desc: 'List pods in namespace prod', allowed: true },
+    { verb: 'get', desc: 'Get deployment nginx-web details', allowed: true },
+    { verb: 'watch', desc: 'Watch events in namespace monitoring', allowed: true },
+    { verb: 'create', desc: 'Create a pod in namespace prod', allowed: false },
+    { verb: 'delete', desc: 'Delete deployment payment-svc', allowed: false },
+    { verb: 'patch', desc: 'Patch service frontend port', allowed: false },
+  ];
+
+  function renderC1() {
+    let answers = {};
+    let locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('RBAC Role: ai-agent-readonly');
+
+      const rbac = document.createElement('div');
+      rbac.className = 'rbac-box';
+      let roleText = `ServiceAccount: system:serviceaccount:prod:ai-agent\nClusterRole: ${C1_ROLE.name}\n\nRules:\n`;
+      for (const r of C1_ROLE.rules) {
+        roleText += `  apiGroups: [${r.groups}]\n  resources: [${r.resources}]\n  verbs: [${r.verbs}]\n\n`;
+      }
+      rbac.textContent = roleText.trimEnd();
+      card.appendChild(rbac);
+
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:.88rem;color:var(--txt);margin-bottom:8px';
+      label.textContent = 'For each operation, predict: Allowed or Denied?';
+      card.appendChild(label);
+
+      for (let i = 0; i < C1_OPS.length; i++) {
+        const op = C1_OPS[i];
+        const row = document.createElement('div');
+        row.className = 'op-row';
+
+        const verbSpan = document.createElement('span');
+        verbSpan.className = 'op-verb ' + (['get','list','watch'].includes(op.verb) ? 'read' : 'write');
+        verbSpan.textContent = op.verb.toUpperCase();
+        row.appendChild(verbSpan);
+
+        const descSpan = document.createElement('span');
+        descSpan.className = 'op-desc';
+        descSpan.textContent = op.desc;
+        row.appendChild(descSpan);
+
+        const btns = document.createElement('div');
+        btns.className = 'choice-btns';
+        for (const choice of ['Allowed', 'Denied']) {
+          const b = document.createElement('button');
+          b.className = 'choice-btn';
+          b.textContent = choice;
+          b.disabled = locked;
+          const key = 'op' + i;
+          if (answers[key] === choice) {
+            if (locked) {
+              const correct = (choice === 'Allowed') === op.allowed;
+              b.classList.add(correct ? 'correct' : 'wrong');
+            } else {
+              b.classList.add('selected');
+            }
+          } else if (locked) {
+            const isCorrectAnswer = (choice === 'Allowed') === op.allowed;
+            if (isCorrectAnswer) b.classList.add('correct');
+          }
+          b.onclick = () => {
+            if (locked) return;
+            answers[key] = choice;
+            render();
+          };
+          btns.appendChild(b);
+        }
+        row.appendChild(btns);
+        card.appendChild(row);
+      }
+
+      if (locked) {
+        let correct = 0;
+        for (let i = 0; i < C1_OPS.length; i++) {
+          const ans = answers['op' + i];
+          const expected = C1_OPS[i].allowed ? 'Allowed' : 'Denied';
+          if (ans === expected) correct++;
+        }
+        const sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = `<span class="label">Score:</span><span class="val ${correct===6?'perfect':correct>=4?'partial':'low'}">${correct}/6</span>`;
+        card.appendChild(sb);
+        if (correct < 6) {
+          const fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'Read-only verbs (get, list, watch) match the ClusterRole. Write verbs (create, delete, patch) are absent — RBAC denies by default.';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+
+      $controls.innerHTML = '';
+      const allAnswered = Object.keys(answers).length === C1_OPS.length;
+      if (!locked) {
+        addBtn('Check Answers', () => { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 2: Agent Control Loop — ordering
+     ═══════════════════════════════════════════════════ */
+  const C2_STAGES = [
+    { name: 'Detect', desc: 'Monitor signals, receive alerts' },
+    { name: 'Diagnose', desc: 'Read cluster state, correlate evidence' },
+    { name: 'Propose', desc: 'Draft remediation plan' },
+    { name: 'Approve', desc: 'Human review or policy check' },
+    { name: 'Execute', desc: 'Apply changes via K8s API' },
+    { name: 'Verify', desc: 'Confirm fix, check for regression' },
+  ];
+
+  function renderC2() {
+    const shuffled = [...C2_STAGES];
+    // Fisher-Yates with seeded shuffle (deterministic for consistent experience)
+    const seed = [3, 5, 1, 0, 4, 2];
+    const items = seed.map(i => ({...C2_STAGES[i]}));
+    let order = items.map((_, i) => i);
+    let locked = false;
+    let dragIdx = null;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('Agent Control Loop — Put the stages in order');
+
+      const scenario = document.createElement('div');
+      scenario.style.cssText = 'font-size:.88rem;color:var(--dim);margin-bottom:8px;padding:4px 8px;background:rgba(123,108,246,.06);border-radius:4px;border-left:2px solid var(--accent2)';
+      scenario.textContent = 'Scenario: A pod in the payment namespace is crashlooping. An AI agent must respond. Arrange the 6 stages of the agent control loop in the correct order.';
+      card.appendChild(scenario);
+
+      const list = document.createElement('ul');
+      list.className = 'order-list';
+      for (let pos = 0; pos < order.length; pos++) {
+        const itemIdx = order[pos];
+        const item = items[itemIdx];
+        const li = document.createElement('li');
+        if (locked) {
+          const correctName = C2_STAGES[pos].name;
+          li.classList.add(item.name === correctName ? 'correct-pos' : 'wrong-pos');
+        }
+        if (dragIdx === pos) li.classList.add('dragging');
+
+        const idx = document.createElement('span');
+        idx.className = 'idx';
+        idx.textContent = (pos + 1) + '.';
+        li.appendChild(idx);
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'stage-name';
+        nameSpan.textContent = item.name;
+        li.appendChild(nameSpan);
+
+        const descSpan = document.createElement('span');
+        descSpan.className = 'stage-desc';
+        descSpan.textContent = item.desc;
+        li.appendChild(descSpan);
+
+        if (!locked) {
+          // Move up/down buttons
+          if (pos > 0) {
+            const up = document.createElement('button');
+            up.className = 'choice-btn';
+            up.textContent = '▲';
+            up.style.cssText = 'padding:2px 6px;font-size:.72rem';
+            up.onclick = () => { [order[pos], order[pos-1]] = [order[pos-1], order[pos]]; render(); };
+            li.appendChild(up);
+          }
+          if (pos < order.length - 1) {
+            const dn = document.createElement('button');
+            dn.className = 'choice-btn';
+            dn.textContent = '▼';
+            dn.style.cssText = 'padding:2px 6px;font-size:.72rem';
+            dn.onclick = () => { [order[pos], order[pos+1]] = [order[pos+1], order[pos]]; render(); };
+            li.appendChild(dn);
+          }
+        }
+        list.appendChild(li);
+      }
+      card.appendChild(list);
+
+      if (locked) {
+        let correct = 0;
+        for (let i = 0; i < order.length; i++) {
+          if (items[order[i]].name === C2_STAGES[i].name) correct++;
+        }
+        const sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = `<span class="label">Score:</span><span class="val ${correct===6?'perfect':correct>=4?'partial':'low'}">${correct}/6</span>`;
+        card.appendChild(sb);
+        if (correct < 6) {
+          const fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'Correct order: Detect → Diagnose → Propose → Approve → Execute → Verify. Five of six stages are read-only — only Execute needs write permissions.';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+
+      $controls.innerHTML = '';
+      if (!locked) {
+        addBtn('Check Order', () => { locked = true; render(); });
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 3: MCP Protocol — method matching
+     ═══════════════════════════════════════════════════ */
+  const C3_SNIPPETS = [
+    {
+      json: `{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "???",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "clientInfo": {"name": "diag-agent"}
+  }
+}`,
+      answer: 'initialize',
+      hint: 'Handshake — client sends its capabilities and protocol version',
+    },
+    {
+      json: `{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "???",
+  "params": {}
+}`,
+      answer: 'tools/list',
+      hint: 'Discovery — client asks what tools the server offers',
+    },
+    {
+      json: `{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "???",
+  "params": {
+    "name": "list_pods",
+    "arguments": {"namespace": "prod"}
+  }
+}`,
+      answer: 'tools/call',
+      hint: 'Invocation — client calls a specific tool with arguments',
+    },
+  ];
+  const C3_OPTIONS = ['initialize', 'tools/list', 'tools/call'];
+
+  function renderC3() {
+    let answers = {};
+    let locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('MCP Protocol — Match each request to its method');
+
+      const intro = document.createElement('div');
+      intro.style.cssText = 'font-size:.88rem;color:var(--dim);margin-bottom:8px';
+      intro.textContent = 'MCP uses JSON-RPC 2.0. Each request has a "method" field. Given these three requests (with method hidden), select the correct MCP method for each.';
+      card.appendChild(intro);
+
+      for (let i = 0; i < C3_SNIPPETS.length; i++) {
+        const s = C3_SNIPPETS[i];
+        const box = document.createElement('div');
+        box.className = 'json-box';
+        box.innerHTML = syntaxHL(s.json);
+        card.appendChild(box);
+
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:10px';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'font-size:.84rem;color:var(--dim);min-width:60px';
+        label.textContent = 'Method:';
+        row.appendChild(label);
+
+        const btns = document.createElement('div');
+        btns.className = 'choice-btns';
+        for (const opt of C3_OPTIONS) {
+          const b = document.createElement('button');
+          b.className = 'choice-btn';
+          b.textContent = opt;
+          b.disabled = locked;
+          const key = 'q' + i;
+          if (answers[key] === opt) {
+            if (locked) {
+              b.classList.add(opt === s.answer ? 'correct' : 'wrong');
+            } else {
+              b.classList.add('selected');
+            }
+          } else if (locked && opt === s.answer) {
+            b.classList.add('correct');
+          }
+          b.onclick = () => { if (locked) return; answers[key] = opt; render(); };
+          btns.appendChild(b);
+        }
+        row.appendChild(btns);
+        card.appendChild(row);
+
+        if (locked) {
+          const fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = s.hint;
+          card.appendChild(fb);
+        }
+      }
+
+      if (locked) {
+        let correct = 0;
+        for (let i = 0; i < C3_SNIPPETS.length; i++) {
+          if (answers['q' + i] === C3_SNIPPETS[i].answer) correct++;
+        }
+        const sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = `<span class="label">Score:</span><span class="val ${correct===3?'perfect':correct>=2?'partial':'low'}">${correct}/3</span>`;
+        card.appendChild(sb);
+      }
+
+      $main.appendChild(card);
+
+      $controls.innerHTML = '';
+      const allAnswered = Object.keys(answers).length === 3;
+      if (!locked) {
+        addBtn('Check Answers', () => { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 4: Autonomy Tier Classification
+     ═══════════════════════════════════════════════════ */
+  const C4_OPS = [
+    { text: 'List pods across all namespaces', tier: 1 },
+    { text: 'Scale deployment replicas from 3 to 5', tier: 2 },
+    { text: 'Delete a namespace', tier: 3 },
+    { text: 'Read events in the monitoring namespace', tier: 1 },
+    { text: 'Rollout restart a deployment', tier: 2 },
+    { text: 'Delete PersistentVolumeClaims', tier: 3 },
+    { text: 'Generate a diagnostic report', tier: 1 },
+    { text: 'Modify a ClusterRole to add permissions', tier: 3 },
+  ];
+  const C4_LABELS = { 1: 'T1: Auto', 2: 'T2: Approve', 3: 'T3: Never' };
+
+  function renderC4() {
+    let answers = {};
+    let locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('Autonomy Spectrum — Classify each operation');
+
+      const legend = document.createElement('div');
+      legend.style.cssText = 'font-size:.84rem;color:var(--dim);margin-bottom:8px;display:flex;gap:12px;flex-wrap:wrap';
+      legend.innerHTML = '<span style="color:var(--ok)">Tier 1: Autonomous</span><span style="color:var(--warn)">Tier 2: Approval-gated</span><span style="color:var(--bad)">Tier 3: Never delegated</span>';
+      card.appendChild(legend);
+
+      const grid = document.createElement('div');
+      grid.className = 'tier-grid';
+
+      for (let i = 0; i < C4_OPS.length; i++) {
+        const op = C4_OPS[i];
+        const item = document.createElement('div');
+        item.className = 'tier-item';
+
+        const txt = document.createElement('span');
+        txt.className = 'op-text';
+        txt.textContent = op.text;
+        item.appendChild(txt);
+
+        const sel = document.createElement('div');
+        sel.className = 'tier-select';
+        for (const t of [1, 2, 3]) {
+          const b = document.createElement('button');
+          b.className = 'tier-btn t' + t;
+          b.textContent = C4_LABELS[t];
+          b.disabled = locked;
+          const key = 'op' + i;
+          if (answers[key] === t) {
+            b.classList.add('sel');
+            if (locked && t !== op.tier) b.style.textDecoration = 'line-through';
+          }
+          if (locked && t === op.tier) {
+            b.classList.add('sel');
+            b.style.fontWeight = '700';
+          }
+          b.onclick = () => { if (locked) return; answers[key] = t; render(); };
+          sel.appendChild(b);
+        }
+        item.appendChild(sel);
+        grid.appendChild(item);
+      }
+      card.appendChild(grid);
+
+      if (locked) {
+        let correct = 0;
+        for (let i = 0; i < C4_OPS.length; i++) {
+          if (answers['op' + i] === C4_OPS[i].tier) correct++;
+        }
+        const sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = `<span class="label">Score:</span><span class="val ${correct===8?'perfect':correct>=6?'partial':'low'}">${correct}/8</span>`;
+        card.appendChild(sb);
+        if (correct < 8) {
+          const fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'Tier 1 = read-only or no state change. Tier 2 = reversible state change. Tier 3 = destructive, irreversible, or privilege escalation.';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+
+      $controls.innerHTML = '';
+      const allAnswered = Object.keys(answers).length === C4_OPS.length;
+      if (!locked) {
+        addBtn('Check Answers', () => { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        addNextBtn();
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CHALLENGE 5: Audit Trail Detective
+     ═══════════════════════════════════════════════════ */
+  const C5_ENTRIES = [
+    {
+      json: `{
+  "verb": "list",
+  "user": {"username": "system:serviceaccount:prod:ai-agent"},
+  "objectRef": {"resource": "pods", "namespace": "prod"},
+  "responseStatus": {"code": 200}
+}`,
+      questions: [
+        { q: 'Who made this request?', opts: ['cluster-admin', 'ai-agent SA in prod', 'kubelet'], answer: 1 },
+        { q: 'Was it allowed?', opts: ['Yes (200)', 'No (403)'], answer: 0 },
+      ],
+    },
+    {
+      json: `{
+  "verb": "create",
+  "user": {"username": "system:serviceaccount:prod:ai-agent"},
+  "objectRef": {"resource": "pods", "namespace": "prod"},
+  "responseStatus": {"code": 403}
+}`,
+      questions: [
+        { q: 'What operation was attempted?', opts: ['List pods', 'Create a pod', 'Delete a pod'], answer: 1 },
+        { q: 'Was it allowed?', opts: ['Yes (200)', 'No (403)'], answer: 1 },
+      ],
+    },
+    {
+      json: `{
+  "verb": "delete",
+  "user": {"username": "system:serviceaccount:staging:deploy-bot"},
+  "objectRef": {"resource": "deployments", "namespace": "staging", "name": "api-v2"},
+  "responseStatus": {"code": 403}
+}`,
+      questions: [
+        { q: 'Which ServiceAccount?', opts: ['ai-agent in prod', 'deploy-bot in staging', 'system:admin'], answer: 1 },
+        { q: 'What was the target?', opts: ['pod api-v2', 'deployment api-v2', 'service api-v2'], answer: 1 },
+      ],
+    },
+    {
+      json: `{
+  "verb": "get",
+  "user": {"username": "system:serviceaccount:monitoring:metrics-reader"},
+  "objectRef": {"resource": "nodes", "name": "worker-3"},
+  "responseStatus": {"code": 200}
+}`,
+      questions: [
+        { q: 'Which namespace is this SA from?', opts: ['prod', 'monitoring', 'kube-system'], answer: 1 },
+        { q: 'What resource was accessed?', opts: ['pods', 'nodes', 'events'], answer: 1 },
+      ],
+    },
+  ];
+
+  function renderC5() {
+    let answers = {};
+    let locked = false;
+
+    function render() {
+      $main.innerHTML = '';
+      const card = mkCard('Audit Trail Detective — Read the audit log');
+
+      const intro = document.createElement('div');
+      intro.style.cssText = 'font-size:.88rem;color:var(--dim);margin-bottom:8px';
+      intro.textContent = 'Each entry is a Kubernetes audit log event. Answer the questions about each entry.';
+      card.appendChild(intro);
+
+      for (let e = 0; e < C5_ENTRIES.length; e++) {
+        const entry = C5_ENTRIES[e];
+        const box = document.createElement('div');
+        box.className = 'audit-entry';
+
+        const jsonDiv = document.createElement('div');
+        jsonDiv.className = 'audit-json';
+        jsonDiv.innerHTML = syntaxHL(entry.json);
+        box.appendChild(jsonDiv);
+
+        for (let q = 0; q < entry.questions.length; q++) {
+          const question = entry.questions[q];
+          const qDiv = document.createElement('div');
+          qDiv.className = 'audit-q';
+          qDiv.textContent = question.q;
+          box.appendChild(qDiv);
+
+          const btns = document.createElement('div');
+          btns.className = 'choice-btns';
+          btns.style.marginBottom = '4px';
+          for (let o = 0; o < question.opts.length; o++) {
+            const b = document.createElement('button');
+            b.className = 'choice-btn';
+            b.textContent = question.opts[o];
+            b.disabled = locked;
+            const key = `e${e}q${q}`;
+            if (answers[key] === o) {
+              if (locked) {
+                b.classList.add(o === question.answer ? 'correct' : 'wrong');
+              } else {
+                b.classList.add('selected');
+              }
+            } else if (locked && o === question.answer) {
+              b.classList.add('correct');
+            }
+            b.onclick = () => { if (locked) return; answers[key] = o; render(); };
+            btns.appendChild(b);
+          }
+          box.appendChild(btns);
+        }
+        card.appendChild(box);
+      }
+
+      if (locked) {
+        let correct = 0, total = 0;
+        for (let e = 0; e < C5_ENTRIES.length; e++) {
+          for (let q = 0; q < C5_ENTRIES[e].questions.length; q++) {
+            total++;
+            if (answers[`e${e}q${q}`] === C5_ENTRIES[e].questions[q].answer) correct++;
+          }
+        }
+        const sb = document.createElement('div');
+        sb.className = 'score-bar';
+        sb.innerHTML = `<span class="label">Score:</span><span class="val ${correct===total?'perfect':correct>=total-2?'partial':'low'}">${correct}/${total}</span>`;
+        card.appendChild(sb);
+        if (correct < total) {
+          const fb = document.createElement('div');
+          fb.className = 'feedback';
+          fb.textContent = 'The audit log records: user (ServiceAccount identity), verb (operation), objectRef (target resource), and responseStatus.code (200=allowed, 403=denied).';
+          card.appendChild(fb);
+        }
+      }
+
+      $main.appendChild(card);
+
+      $controls.innerHTML = '';
+      let totalQs = 0;
+      for (const e of C5_ENTRIES) totalQs += e.questions.length;
+      const allAnswered = Object.keys(answers).length === totalQs;
+      if (!locked) {
+        addBtn('Check Answers', () => { locked = true; render(); }, allAnswered ? '' : 'disabled');
+      } else {
+        // Final challenge — show completion
+        const span = document.createElement('span');
+        span.id = 'status';
+        span.textContent = '✓ All challenges complete';
+        span.style.color = 'var(--ok)';
+        $controls.appendChild(span);
+        $challenge.classList.add('success');
+      }
+    }
+    render();
+  }
+
+  /* ═══════════════════════════════════════════════════
+     Challenge registry and navigation
+     ═══════════════════════════════════════════════════ */
+  const CHALLENGES = [
+    { goal: 'Predict which API operations are allowed or denied based on the RBAC role', render: renderC1 },
+    { goal: 'Arrange the 6 agent control loop stages in the correct order', render: renderC2 },
+    { goal: 'Match each JSON-RPC request to the correct MCP method', render: renderC3 },
+    { goal: 'Classify 8 Kubernetes operations into autonomy tiers', render: renderC4 },
+    { goal: 'Read audit log entries and answer questions about each event', render: renderC5 },
+  ];
+
+  function renderDots() {
+    $dots.innerHTML = '';
+    for (let i = 0; i < CHALLENGES.length; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot' + (i < challengeIdx ? ' done' : i === challengeIdx ? ' cur' : '');
+      d.textContent = i + 1;
+      $dots.appendChild(d);
+    }
+    $goal.textContent = CHALLENGES[challengeIdx].goal;
+    $challenge.classList.remove('success');
+  }
+
+  /* ── helpers ── */
+  function mkCard(title) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const h2 = document.createElement('h2');
+    h2.textContent = title;
+    card.appendChild(h2);
+    return card;
+  }
+
+  function addBtn(text, handler, state) {
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = text;
+    if (state === 'disabled') { btn.disabled = true; }
+    btn.onclick = handler;
+    $controls.appendChild(btn);
+  }
+
+  function addNextBtn() {
+    if (challengeIdx < CHALLENGES.length - 1) {
+      const btn = document.createElement('button');
+      btn.className = 'btn ok';
+      btn.textContent = 'Next Challenge →';
+      btn.onclick = () => { challengeIdx++; renderDots(); CHALLENGES[challengeIdx].render(); };
+      $controls.appendChild(btn);
+    }
+  }
+
+  function syntaxHL(json) {
+    return json
+      .replace(/("(?:\\.|[^"\\])*")\s*:/g, '<span class="key">$1</span>:')
+      .replace(/:\s*("(?:\\.|[^"\\])*")/g, ': <span class="str">$1</span>')
+      .replace(/:\s*(\d+)/g, ': <span class="num">$1</span>')
+      .replace(/"(\?\?\?)"/g, '<span style="color:var(--warn);font-weight:700">"???"</span>');
+  }
+
+  function init() {
+    challengeIdx = 0;
+    renderDots();
+    CHALLENGES[0].render();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

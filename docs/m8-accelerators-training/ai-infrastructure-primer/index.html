@@ -1,0 +1,289 @@
+<!doctype html><html lang=en dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-m8-accelerators-training/ai-infrastructure-primer" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.1"><title data-rh=true>Primer: AI Infrastructure for Kubernetes Engineers | Advanced Kubernetes: Production-Scale Internals & the AI-Native Platform</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:url content=https://schoolofdevops.github.io/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer /><meta data-rh=true property=og:locale content=en /><meta data-rh=true name=docusaurus_locale content=en /><meta data-rh=true name=docsearch:language content=en /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="Primer: AI Infrastructure for Kubernetes Engineers | Advanced Kubernetes: Production-Scale Internals & the AI-Native Platform"/><meta data-rh=true name=description content="Module 8 uses terms such as GPU topology, AllReduce, NCCL, NVLink, DRA, and Kueue. These terms can"/><meta data-rh=true property=og:description content="Module 8 uses terms such as GPU topology, AllReduce, NCCL, NVLink, DRA, and Kueue. These terms can"/><link data-rh=true rel=icon href=/304-kubeadv/img/favicon.ico /><link data-rh=true rel=canonical href=https://schoolofdevops.github.io/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer /><link data-rh=true rel=alternate href=https://schoolofdevops.github.io/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer hreflang=en /><link data-rh=true rel=alternate href=https://schoolofdevops.github.io/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"https://schoolofdevops.github.io/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer","name":"AI Infrastructure Primer","position":1}]}</script><link rel=stylesheet href=/304-kubeadv/assets/css/styles.0654b22f.css /><script src=/304-kubeadv/assets/js/runtime~main.77b0ed68.js defer></script><script src=/304-kubeadv/assets/js/main.c6867b57.js defer></script></head><body><svg style="display: none;"><defs>
+<symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-478")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||"light"),document.documentElement.setAttribute("data-theme-choice",t||"light")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><div role=region aria-label="Skip to main content"><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>Skip to main content</a></div><nav aria-label=Main class="theme-layout-navbar navbar navbar--fixed-top"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/304-kubeadv/><b class="navbar__title text--truncate">Advanced Kubernetes: Production-Scale Internals & the AI-Native Platform</b></a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/304-kubeadv/docs/intro>Course</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href=https://github.com/schoolofdevops/304-kubeadv target=_blank rel="noopener noreferrer" class="navbar__item navbar__link">GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class=sidebar_njMd><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/304-kubeadv/docs/intro><span title=Introduction class=linkLabel_WmDU>Introduction</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/setup/prerequisites><span title=Setup class=categoryLinkLabel_W154>Setup</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m1-reconciliation-engine/lesson><span title="M1 · Reconciliation Engine" class=categoryLinkLabel_W154>M1 · Reconciliation Engine</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m2-api-request-lifecycle/lesson><span title="M2 · API Server at Scale" class=categoryLinkLabel_W154>M2 · API Server at Scale</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m3-etcd-source-of-truth/lesson><span title="M3 · etcd" class=categoryLinkLabel_W154>M3 · etcd</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m4-scheduling-controllers/lesson><span title="M4 · Scheduling & Controllers" class=categoryLinkLabel_W154>M4 · Scheduling & Controllers</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m5-crds-operators/lesson><span title="M5 · CRDs & Operators" class=categoryLinkLabel_W154>M5 · CRDs & Operators</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m6-kubernetes-at-scale/lesson><span title="M6 · Kubernetes at Scale" class=categoryLinkLabel_W154>M6 · Kubernetes at Scale</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m7-networking-data-plane/lesson><span title="M7 · Networking & Data Plane" class=categoryLinkLabel_W154>M7 · Networking & Data Plane</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role=button aria-expanded=true href=/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer><span title="M8 · Accelerators & Training" class=categoryLinkLabel_W154>M8 · Accelerators & Training</span></a></div><ul class=menu__list><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current=page tabindex=0 href=/304-kubeadv/docs/m8-accelerators-training/ai-infrastructure-primer><span title="AI Infrastructure Primer" class=linkLabel_WmDU>AI Infrastructure Primer</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/304-kubeadv/docs/m8-accelerators-training/lesson><span title="Lesson: Scheduling Accelerators and Distributed Model Training" class=linkLabel_WmDU>Lesson: Scheduling Accelerators and Distributed Model Training</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/304-kubeadv/docs/m8-accelerators-training/lab><span title="Lab - Accelerators and Distributed Training" class=linkLabel_WmDU>Lab - Accelerators and Distributed Training</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/304-kubeadv/docs/m8-accelerators-training/deep-dive><span title="Deep Dive" class=linkLabel_WmDU>Deep Dive</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/304-kubeadv/docs/m8-accelerators-training/quiz><span title="Quiz: Scheduling Accelerators & Distributed Model Training" class=linkLabel_WmDU>Quiz: Scheduling Accelerators & Distributed Model Training</span></a></ul><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m9-serving-llm-workloads/lesson><span title="M9 · Serving LLM Workloads" class=categoryLinkLabel_W154>M9 · Serving LLM Workloads</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m10-agentic-kubernetes/lesson><span title="M10 · Agentic Kubernetes" class=categoryLinkLabel_W154>M10 · Agentic Kubernetes</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/304-kubeadv/docs/m11-capstone-war-room/lesson><span title="M11 · Capstone War-Room" class=categoryLinkLabel_W154>M11 · Capstone War-Room</span></a></div></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=Breadcrumbs><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label="Home page" class=breadcrumbs__link href=/304-kubeadv/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class=breadcrumbs__item><span class=breadcrumbs__link>M8 · Accelerators & Training</span><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>AI Infrastructure Primer</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>AI infrastructure for Kubernetes engineers</h1></header>
+<p>Module 8 uses terms such as GPU topology, AllReduce, NCCL, NVLink, DRA, and Kueue. These terms can
+be difficult to connect if your experience is mainly with application and Kubernetes platforms.</p>
+<p>This primer explains each foundation before the main Module 8 lesson uses it. It starts with the AI
+workload, follows the data through one GPU and several GPU servers, and then shows which decisions
+Kubernetes controls.</p>
+<p>You do not need prior experience with machine learning or GPU servers.</p>
+<div class=deck_nWXz><div class=bar_dOoE><span class=label_ZSLR>▶ <!-- -->M8: AI Infrastructure Primer</span><a class=full_PrDQ href=/304-kubeadv/decks/m8-ai-infrastructure-primer.html target=_blank rel="noopener noreferrer">Open fullscreen ↗</a></div><div class=frame_M4DO><iframe src=/304-kubeadv/decks/m8-ai-infrastructure-primer.html title="M8: AI Infrastructure Primer" loading=lazy allowfullscreen></iframe></div></div>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=ai-workload-foundations>AI workload foundations<a href=#ai-workload-foundations class=hash-link aria-label="Direct link to AI workload foundations" title="Direct link to AI workload foundations" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=ai-training>AI training<a href=#ai-training class=hash-link aria-label="Direct link to AI training" title="Direct link to AI training" translate=no>​</a></h3>
+<p><strong>AI training</strong> is the process of changing a model's parameters so that its predictions improve.
+A training program repeats the following loop:</p>
+<ol>
+<li class="">Read a batch of training examples.</li>
+<li class="">Run the model and produce a prediction. This is called the forward pass.</li>
+<li class="">Compare the prediction with the expected result and calculate a loss value.</li>
+<li class="">Calculate how each parameter contributed to that loss. This is called the backward pass.</li>
+<li class="">Use those calculations to update the model parameters.</li>
+</ol>
+<p>The parameters being updated are normally called <strong>weights</strong>. A large model can contain billions
+of weights. Training also keeps temporary values and optimizer state, so it needs much more memory
+than storing the weights alone.</p>
+<!-- -->
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=ai-inference>AI inference<a href=#ai-inference class=hash-link aria-label="Direct link to AI inference" title="Direct link to AI inference" translate=no>​</a></h3>
+<p><strong>AI inference</strong> uses a model that has already been trained. The model receives an input and
+produces an output without updating its weights.</p>
+<p>For a language model, the input is converted into tokens. The model processes those tokens and
+generates output tokens. The runtime keeps temporary attention data in a <strong>KV cache</strong> while the
+request is active.</p>
+<p>Training and inference use the same type of GPU, but their resource patterns differ:</p>
+<table><thead><tr><th>Workload<th>Data it keeps<th>Main operational concern<tbody><tr><td>Training<td>Weights, activations, gradients, optimizer state, checkpoints<td>Time required to complete a training step<tr><td>Inference<td>Weights, activations, KV cache, request batches<td>Request latency and tokens produced per second</table>
+<p>Module 8 focuses on training and accelerator allocation. Module 9 covers inference serving in more
+detail.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=model-data>Model data<a href=#model-data class=hash-link aria-label="Direct link to Model data" title="Direct link to Model data" translate=no>​</a></h3>
+<p>The following terms describe data that moves through an AI system:</p>
+<table><thead><tr><th>Term<th>What it contains<th>When it is used<tbody><tr><td><strong>Weights</strong><td>Values learned by the model<td>Training and inference<tr><td><strong>Activations</strong><td>Intermediate outputs created by model layers<td>Forward and backward passes<tr><td><strong>Gradients</strong><td>Values that describe how weights should change<td>Training<tr><td><strong>Optimizer state</strong><td>Additional values used while updating weights<td>Training<tr><td><strong>KV cache</strong><td>Attention data retained for active language-model requests<td>Inference<tr><td><strong>Checkpoint</strong><td>A saved copy of model and training state<td>Failure recovery and restart</table>
+<p>These values can be larger than one GPU's memory. They may also need to move between GPUs during
+every training step. That is why AI infrastructure depends on memory and interconnect topology as
+well as compute capacity.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=gpu>GPU<a href=#gpu class=hash-link aria-label="Direct link to GPU" title="Direct link to GPU" translate=no>​</a></h3>
+<p>A <strong>Graphics Processing Unit</strong>, or <strong>GPU</strong>, is a processor with many parallel execution units. AI
+frameworks use those units to perform large tensor and matrix operations.</p>
+<p>A CPU has fewer, more general-purpose cores. It is suitable for control flow, data preparation,
+and operating-system work. A GPU can perform many similar numerical operations at the same time.
+This is useful because model training repeatedly applies the same mathematical operations across
+large arrays of values.</p>
+<p>A GPU is not only compute units. It also includes local memory, memory controllers, caches, and
+links to the rest of the server.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=hbm>HBM<a href=#hbm class=hash-link aria-label="Direct link to HBM" title="Direct link to HBM" translate=no>​</a></h3>
+<p><strong>High Bandwidth Memory</strong>, or <strong>HBM</strong>, is the local memory attached to a data-center GPU. The GPU
+stores active weights, activations, gradients, optimizer state, or KV cache in HBM while it uses
+them.</p>
+<p>HBM has two independent properties:</p>
+<ul>
+<li class=""><strong>Capacity</strong> is the amount of data that fits in memory.</li>
+<li class=""><strong>Bandwidth</strong> is the rate at which the GPU can read and write that data.</li>
+</ul>
+<p>A model may fail to fit because HBM capacity is too small. A model may fit but still run slowly if
+the compute units wait for memory reads. GPU monitoring must therefore include both memory use and
+memory throughput.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=pci-express>PCI Express<a href=#pci-express class=hash-link aria-label="Direct link to PCI Express" title="Direct link to PCI Express" translate=no>​</a></h3>
+<p><strong>PCI Express</strong>, or <strong>PCIe</strong>, is the general I/O connection inside a server. It connects the CPU
+and system memory to devices such as GPUs, network cards, NVMe storage, DPUs, and FPGAs.</p>
+<p>PCIe links have a generation and a lane count. A GPU commonly uses a link such as PCIe Gen 5 x16.
+The generation controls the transfer rate per lane. The <code>x16</code> value means that the link has sixteen
+lanes.</p>
+<p>Data crosses PCIe when a model moves from CPU memory into GPU memory, when the GPU communicates
+with a PCIe network card, or when storage data reaches the GPU through the normal host path. PCIe
+is much slower than local HBM, so repeated host-to-device transfers can leave GPU compute units
+waiting.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=numa>NUMA<a href=#numa class=hash-link aria-label="Direct link to NUMA" title="Direct link to NUMA" translate=no>​</a></h3>
+<p>Large servers often have more than one CPU socket. Each socket has local memory and local PCIe
+connections. This arrangement is called <strong>Non-Uniform Memory Access</strong>, or <strong>NUMA</strong>, because local
+and remote access take different paths.</p>
+<p>If a GPU and network card are attached below the same CPU socket and PCIe root complex, their data
+path is short. If they are attached to different sockets, traffic may cross the CPU interconnect.
+The devices may have the same specifications but produce different performance because their
+physical paths differ.</p>
+<p>Commands such as <code>nvidia-smi topo -m</code> show GPU, CPU, NUMA, and network-card relationships on NVIDIA
+systems. Kubernetes requires topology information from hardware drivers before it can make useful
+placement decisions.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=distributed-training-foundations>Distributed training foundations<a href=#distributed-training-foundations class=hash-link aria-label="Direct link to Distributed training foundations" title="Direct link to Distributed training foundations" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=distributed-training>Distributed training<a href=#distributed-training class=hash-link aria-label="Direct link to Distributed training" title="Direct link to Distributed training" translate=no>​</a></h3>
+<p><strong>Distributed training</strong> uses more than one worker to train a model. A worker is usually one
+process associated with one GPU. Frameworks assign each worker a rank so that the workers can
+identify one another.</p>
+<p>There are several ways to divide the work:</p>
+<ul>
+<li class=""><strong>Data parallelism</strong> gives each worker a different training batch while keeping a copy of the
+model on every worker.</li>
+<li class=""><strong>Tensor parallelism</strong> splits tensor operations across GPUs.</li>
+<li class=""><strong>Pipeline parallelism</strong> places different model stages on different workers.</li>
+<li class=""><strong>Expert parallelism</strong> places different mixture-of-experts components on different workers.</li>
+</ul>
+<p>Module 8 mainly needs the data-parallel case because it clearly shows why workers must exchange
+gradients.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=gradient-synchronization>Gradient synchronization<a href=#gradient-synchronization class=hash-link aria-label="Direct link to Gradient synchronization" title="Direct link to Gradient synchronization" translate=no>​</a></h3>
+<p>In data parallel training, every worker starts a step with the same model weights. Each worker
+processes a different batch and calculates different local gradients.</p>
+<p>The workers must combine those gradients before updating their model copies. Otherwise, every
+worker would update its weights differently and the model copies would no longer match. This
+exchange is called <strong>gradient synchronization</strong>.</p>
+<p>The next training step cannot safely start until the required synchronization completes. One slow
+worker or network path can therefore delay the complete worker group.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=collective-operations>Collective operations<a href=#collective-operations class=hash-link aria-label="Direct link to Collective operations" title="Direct link to Collective operations" translate=no>​</a></h3>
+<p>A <strong>collective operation</strong> is a communication operation involving a group of workers. The operation
+defines which workers contribute data and which workers receive the result.</p>
+<p>Common collective operations include:</p>
+<table><thead><tr><th>Operation<th>What it does<tbody><tr><td><strong>Broadcast</strong><td>Sends data from one worker to every worker<tr><td><strong>AllGather</strong><td>Collects a different data section from each worker and gives the complete set to every worker<tr><td><strong>ReduceScatter</strong><td>Combines values and gives a different result section to each worker<tr><td><strong>AllReduce</strong><td>Combines values from every worker and gives the combined result to every worker</table>
+<p>These are communication patterns, not network products. A communication library implements them
+using the available GPU and network links.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=allreduce>AllReduce<a href=#allreduce class=hash-link aria-label="Direct link to AllReduce" title="Direct link to AllReduce" translate=no>​</a></h3>
+<p><strong>AllReduce</strong> combines a value from every worker and returns the combined result to every worker.
+For gradient synchronization, the combined value is commonly a sum or average.</p>
+<p>Consider four workers with local gradients <code>g0</code>, <code>g1</code>, <code>g2</code>, and <code>g3</code>. AllReduce performs two
+logical jobs:</p>
+<ol>
+<li class="">Reduce the four gradient sets into one result.</li>
+<li class="">Distribute that result back to all four workers.</li>
+</ol>
+<p>The implementation does not need to send every value through one central worker. Ring and tree
+algorithms divide the transfer into smaller steps. The chosen algorithm depends on message size,
+worker count, and topology.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=nccl>NCCL<a href=#nccl class=hash-link aria-label="Direct link to NCCL" title="Direct link to NCCL" translate=no>​</a></h3>
+<p><strong>NVIDIA Collective Communications Library</strong>, or <strong>NCCL</strong>, is a library that implements collective
+operations for NVIDIA GPUs. Training frameworks such as PyTorch call NCCL when GPU workers need to
+run operations such as AllReduce or AllGather.</p>
+<p>NCCL examines the visible topology and chooses communication algorithms and transports. Depending
+on the system, it may use NVLink, PCIe, shared memory, InfiniBand, RoCE, or ordinary IP networking.</p>
+<p>NCCL does not schedule Pods, allocate GPUs, or make a slow link faster. It uses the devices and
+paths that the platform and scheduler have made available.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=gpu-interconnects-and-network-fabrics>GPU interconnects and network fabrics<a href=#gpu-interconnects-and-network-fabrics class=hash-link aria-label="Direct link to GPU interconnects and network fabrics" title="Direct link to GPU interconnects and network fabrics" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=nvlink>NVLink<a href=#nvlink class=hash-link aria-label="Direct link to NVLink" title="Direct link to NVLink" translate=no>​</a></h3>
+<p><strong>NVLink</strong> is NVIDIA's high-bandwidth connection for supported GPUs and accelerated systems. It
+provides a direct GPU communication path with more bandwidth than ordinary GPU-to-GPU transfers
+through the host PCIe path.</p>
+<p>Training and inference runtimes can use NVLink when model data, activations, or gradients must move
+between connected GPUs. NVLink is a physical interconnect. NCCL is the software library that can
+use that interconnect for collective operations.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=nvswitch>NVSwitch<a href=#nvswitch class=hash-link aria-label="Direct link to NVSwitch" title="Direct link to NVSwitch" translate=no>​</a></h3>
+<p><strong>NVSwitch</strong> is a switch that connects several NVLink-capable GPUs into one GPU fabric. Direct links
+between every pair of GPUs become difficult as the number of GPUs grows. NVSwitch provides
+high-bandwidth paths across a larger group.</p>
+<p>An eight-GPU server connected through NVSwitch behaves differently from a server containing eight
+independent PCIe GPUs. Both servers report eight GPUs, but their GPU-to-GPU communication paths are
+not equivalent.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=network-fabrics>Network fabrics<a href=#network-fabrics class=hash-link aria-label="Direct link to Network fabrics" title="Direct link to Network fabrics" translate=no>​</a></h3>
+<p>Communication leaves the local GPU fabric when workers run on different servers. The following
+network technologies may carry that traffic:</p>
+<table><thead><tr><th>Fabric<th>Description<tbody><tr><td><strong>Ethernet</strong><td>General-purpose data-center network<tr><td><strong>InfiniBand</strong><td>High-bandwidth, low-latency network designed for HPC and AI communication<tr><td><strong>RoCE</strong><td>RDMA over Converged Ethernet, which carries RDMA traffic over a configured Ethernet network</table>
+<p>The network interface card, switch fabric, congestion controls, routing, and topology all affect
+distributed-training performance.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=rdma>RDMA<a href=#rdma class=hash-link aria-label="Direct link to RDMA" title="Direct link to RDMA" translate=no>​</a></h3>
+<p><strong>Remote Direct Memory Access</strong>, or <strong>RDMA</strong>, allows one machine to read or write registered memory
+on another machine with less CPU and operating-system involvement.</p>
+<p>Without RDMA, data normally passes through the sender's network stack and CPU memory, crosses the
+network, and passes through the receiver's CPU memory and network stack. RDMA reduces these copies
+and software-processing steps.</p>
+<p>RDMA is a data-transfer mechanism. InfiniBand and RoCE are common network fabrics that provide it.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=gpudirect-rdma>GPUDirect RDMA<a href=#gpudirect-rdma class=hash-link aria-label="Direct link to GPUDirect RDMA" title="Direct link to GPUDirect RDMA" translate=no>​</a></h3>
+<p><strong>GPUDirect RDMA</strong> allows a supported network card to exchange data directly with GPU memory. The
+normal alternative stages the data through CPU memory before the network card can send it.</p>
+<p>The direct path reduces CPU involvement and avoids an extra host-memory copy. It still depends on
+the GPU, network card, PCIe topology, driver, and network being configured correctly.</p>
+<p>GPUDirect RDMA matters when distributed workers exchange large tensors or gradients across servers.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=scale-up-and-scale-out>Scale up and scale out<a href=#scale-up-and-scale-out class=hash-link aria-label="Direct link to Scale up and scale out" title="Direct link to Scale up and scale out" translate=no>​</a></h3>
+<p><strong>Scale up</strong> connects more GPUs within one high-bandwidth system. NVLink and NVSwitch are common
+parts of this local scale-up domain.</p>
+<p><strong>Scale out</strong> connects several GPU servers over a network fabric. InfiniBand, RoCE, or Ethernet
+carry traffic in this domain.</p>
+<p>Training a model across eight GPUs inside one NVSwitch system is not the same as training it across
+eight GPUs placed on eight servers. The GPU count is the same, but the communication distance is
+different.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=topology-aware-placement>Topology-aware placement<a href=#topology-aware-placement class=hash-link aria-label="Direct link to Topology-aware placement" title="Direct link to Topology-aware placement" translate=no>​</a></h3>
+<p><strong>Topology</strong> describes how CPUs, memory, GPUs, PCIe switches, network cards, servers, and network
+switches are connected.</p>
+<p>A topology-aware placement system tries to keep tightly communicating workers inside the smallest
+domain that satisfies the request. It may prefer the same NVLink group, then the same server, then
+the same rack, before using a more distant path.</p>
+<p>Topology is a requirement only when the workload depends on it. Packing every job into the
+smallest domain can reduce cluster utilization. Platform teams should derive placement rules from
+measured communication time and training-step time.</p>
+<p>Kueue's Topology-Aware Scheduling represents hierarchy through node labels and a <code>Topology</code> object
+referenced by a <code>ResourceFlavor</code>. A workload can prefer or require a topology level such as a rack.
+Kueue assigns suitable topology domains during admission; the Kubernetes scheduler still selects
+the individual nodes that satisfy that assignment.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=kubernetes-accelerator-control>Kubernetes accelerator control<a href=#kubernetes-accelerator-control class=hash-link aria-label="Direct link to Kubernetes accelerator control" title="Direct link to Kubernetes accelerator control" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=device-plugins>Device plugins<a href=#device-plugins class=hash-link aria-label="Direct link to Device plugins" title="Direct link to Device plugins" translate=no>​</a></h3>
+<p>A Kubernetes <strong>device plugin</strong> discovers node devices and advertises an extended resource such as
+<code>nvidia.com/gpu</code>. A Pod requests an integer count:</p>
+<div class="language-yaml codeBlockContainer_Ckt0 theme-code-block" style=--prism-color:#393A34;--prism-background-color:#f6f8fa><div class=codeBlockContent_QJqH><pre tabindex=0 class="prism-code language-yaml codeBlock_bY9V thin-scrollbar" style=color:#393A34;background-color:#f6f8fa><code class=codeBlockLines_e6Vv><div class=token-line style=color:#393A34><span class="token key atrule" style=color:#00a4db>resources</span><span class="token punctuation" style=color:#393A34>:</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">  </span><span class="token key atrule" style=color:#00a4db>limits</span><span class="token punctuation" style=color:#393A34>:</span><span class="token plain"></span><br/></div><div class=token-line style=color:#393A34><span class="token plain">    </span><span class="token key atrule" style=color:#00a4db>nvidia.com/gpu</span><span class="token punctuation" style=color:#393A34>:</span><span class="token plain"> </span><span class="token number" style=color:#36acaa>2</span><br/></div></code></pre></div></div>
+<p>The kubelet asks the plugin to allocate suitable devices before starting the container. This model
+works well for a uniform fleet, but the resource count does not describe device memory, model,
+sharing mode, or interconnect topology.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=dynamic-resource-allocation>Dynamic Resource Allocation<a href=#dynamic-resource-allocation class=hash-link aria-label="Direct link to Dynamic Resource Allocation" title="Direct link to Dynamic Resource Allocation" translate=no>​</a></h3>
+<p><strong>Dynamic Resource Allocation</strong>, or <strong>DRA</strong>, represents devices through Kubernetes API objects.
+Drivers publish device inventory and attributes in <code>ResourceSlice</code> objects. Workloads request
+devices through <code>ResourceClaim</code> objects.</p>
+<p>A DRA request can select a device class and match attributes or capacity with CEL expressions. The
+scheduler selects named devices and records the allocation in claim status before the kubelet
+prepares them for the container.</p>
+<p>DRA gives Kubernetes more information than an integer resource count. It still depends on drivers
+publishing the attributes and topology that a workload needs.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=accelerator-scheduling-layers>Accelerator scheduling layers<a href=#accelerator-scheduling-layers class=hash-link aria-label="Direct link to Accelerator scheduling layers" title="Direct link to Accelerator scheduling layers" translate=no>​</a></h3>
+<p>Accelerator workloads pass through three separate scheduling decisions:</p>
+<table><thead><tr><th>Layer<th>Question it answers<th>Main controls<tbody><tr><td><strong>Kueue</strong><td>Should this workload run now?<td>Queue, quota, priority, fairness, group admission<tr><td><strong>kube-scheduler</strong><td>Which node should run each Pod?<td>Filter, score, reserve, and bind<tr><td><strong>DRA</strong><td>Which exact device should the workload receive?<td><code>ResourceClaim</code>, <code>ResourceSlice</code>, device class, attributes, capacity</table>
+<p>These layers complement one another. Kueue does not replace the Kubernetes scheduler, and DRA does
+not decide which team's work should consume scarce capacity first.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=gang-scheduling>Gang scheduling<a href=#gang-scheduling class=hash-link aria-label="Direct link to Gang scheduling" title="Direct link to Gang scheduling" translate=no>​</a></h3>
+<p>A distributed training job may need several worker Pods before useful computation can begin.
+Consider four workers that each request eight GPUs. The complete workload needs 32 GPUs.</p>
+<p>If only 24 GPUs are free, starting three workers can reserve expensive devices while the fourth
+worker remains Pending. The three running workers may be unable to make progress because the
+training runtime expects the complete group.</p>
+<p><strong>Gang scheduling</strong> means admitting the worker group together or keeping the group waiting. When
+all 32 GPUs can be made available, the workload is admitted and its four workers can start.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=kueue>Kueue<a href=#kueue class=hash-link aria-label="Direct link to Kueue" title="Direct link to Kueue" translate=no>​</a></h3>
+<p><strong>Kueue</strong> is a Kubernetes batch admission controller. It decides whether a complete workload may
+start based on quota, priority, and admission policy.</p>
+<p>Kueue normally suspends a queued Job before its Pods consume resources. When quota becomes
+available, Kueue admits the workload and allows the Job to create active Pods. Higher-priority work
+may preempt lower-priority work when policy allows it.</p>
+<p>Kueue does not select the physical GPU. DRA and the Kubernetes scheduler handle device and node
+selection after admission.</p>
+<p>Kueue organizes team-facing queues and shared resource pools:</p>
+<ul>
+<li class="">A <strong>LocalQueue</strong> gives workloads in a namespace a submission point.</li>
+<li class="">A <strong>ClusterQueue</strong> defines shared quota, resource flavors, priority, preemption, fair sharing,
+and admission policy.</li>
+<li class="">A <strong>Workload</strong> represents the group that Kueue admits. It may come from a Job, JobSet,
+PyTorchJob, MPIJob, RayJob, or another supported controller.</li>
+</ul>
+<p>Kueue's <code>waitForPodsReady</code> behavior can stop an admitted workload from holding resources
+indefinitely when the expected Pods cannot become ready together.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=dra-and-kueue-together>DRA and Kueue together<a href=#dra-and-kueue-together class=hash-link aria-label="Direct link to DRA and Kueue together" title="Direct link to DRA and Kueue together" translate=no>​</a></h3>
+<p>For a multi-worker training job, the control flow is:</p>
+<ol>
+<li class="">Kueue checks quota, priority, policy, and whether the workload can be admitted as a group.</li>
+<li class="">The workload controller creates or activates the worker Pods.</li>
+<li class="">The Kubernetes scheduler selects suitable nodes.</li>
+<li class="">DRA matches each <code>ResourceClaim</code> to named devices from the published <code>ResourceSlice</code> inventory.</li>
+<li class="">The kubelet and DRA driver prepare those devices for the containers.</li>
+</ol>
+<p>Kueue allocates the opportunity to run. DRA allocates the devices used by the admitted workload.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=kueue-applicability>Kueue applicability<a href=#kueue-applicability class=hash-link aria-label="Direct link to Kueue applicability" title="Direct link to Kueue applicability" translate=no>​</a></h3>
+<p>Using a GPU does not automatically require Kueue.</p>
+<table><thead><tr><th>Scenario<th style=text-align:right>DRA or device plugin<th style=text-align:right>Kueue<tbody><tr><td>Inference Deployment whose replicas can start independently<td style=text-align:right>Yes<td style=text-align:right>Usually no<tr><td>Occasional single-GPU Job in a cluster with spare capacity<td style=text-align:right>Yes<td style=text-align:right>Usually no<tr><td>Many queued GPU Jobs<td style=text-align:right>Yes<td style=text-align:right>Yes<tr><td>Several teams sharing accelerator quota<td style=text-align:right>Yes<td style=text-align:right>Yes<tr><td>Distributed training that needs all workers together<td style=text-align:right>Yes<td style=text-align:right>Yes<tr><td>Priority, fair sharing, or workload preemption<td style=text-align:right>Device side only<td style=text-align:right>Yes</table>
+<p>Introduce Kueue when scarce resources are oversubscribed, workloads compete for quota, or a
+multi-Pod workload must be admitted as a group. Do not introduce it merely because a Pod requests
+an accelerator.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=responsibility-boundaries>Responsibility boundaries<a href=#responsibility-boundaries class=hash-link aria-label="Direct link to Responsibility boundaries" title="Direct link to Responsibility boundaries" translate=no>​</a></h3>
+<p>Each layer owns a separate decision:</p>
+<table><thead><tr><th>Layer<th>Main component<th>Decision<tbody><tr><td>Training logic<td>PyTorch, JAX, TensorFlow<td>What computation runs<tr><td>Collective communication<td>NCCL<td>How GPU workers exchange data<tr><td>Multi-worker lifecycle<td>JobSet, Kubeflow Trainer<td>How the worker group starts and completes<tr><td>Admission<td>Kueue<td>Whether quota and priority allow the workload to start<tr><td>Placement and allocation<td>Scheduler, device plugin, DRA<td>Which node and devices satisfy the request<tr><td>Device preparation<td>Kubelet, container runtime, vendor driver<td>How the container receives the device<tr><td>Physical execution<td>GPU, HBM, PCIe, NVLink, NIC, storage<td>How fast the selected data path runs</table>
+<p>When a workload is Pending, inspect admission, claims, scheduler events, and driver state. When it
+is Running but slow, inspect data loading, memory use, collective time, and physical topology.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=reading-the-module-8-lab>Reading the Module 8 lab<a href=#reading-the-module-8-lab class=hash-link aria-label="Direct link to Reading the Module 8 lab" title="Direct link to Reading the Module 8 lab" translate=no>​</a></h2>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id=m8-lab-scope>M8 lab scope<a href=#m8-lab-scope class=hash-link aria-label="Direct link to M8 lab scope" title="Direct link to M8 lab scope" translate=no>​</a></h3>
+<p>The Module 8 lab does not require a physical GPU. The example DRA driver publishes simulated GPU
+devices. This lets you inspect the Kubernetes control-plane decisions on a normal laptop.</p>
+<p>The lab proves:</p>
+<ul>
+<li class="">device inventory through <code>ResourceSlice</code>,</li>
+<li class="">device requests through <code>ResourceClaim</code>,</li>
+<li class="">attribute and capacity selection through CEL,</li>
+<li class="">selected devices recorded in claim status,</li>
+<li class="">Kueue quota and admission,</li>
+<li class="">and priority-based preemption.</li>
+</ul>
+<p>The simulation does not measure HBM bandwidth, PCIe throughput, NVLink, NCCL, RDMA, or real
+training performance. Those require physical hardware and a distributed training runtime.</p>
+<div class="theme-admonition theme-admonition-tip admonition_xJq3 alert alert--success"><div class=admonitionHeading_Gvgb><span class=admonitionIcon_Rf37><svg viewBox="0 0 12 16"><path fill-rule=evenodd d="M6.5 0C3.48 0 1 2.19 1 5c0 .92.55 2.25 1 3 1.34 2.25 1.78 2.78 2 4v1h5v-1c.22-1.22.66-1.75 2-4 .45-.75 1-2.08 1-3 0-2.81-2.48-5-5.5-5zm3.64 7.48c-.25.44-.47.8-.67 1.11-.86 1.41-1.25 2.06-1.45 3.23-.02.05-.02.11-.02.17H5c0-.06 0-.13-.02-.17-.2-1.17-.59-1.83-1.45-3.23-.2-.31-.42-.67-.67-1.11C2.44 6.78 2 5.65 2 5c0-2.2 2.02-4 4.5-4 1.22 0 2.36.42 3.22 1.19C10.55 2.94 11 3.94 11 5c0 .66-.44 1.78-.86 2.48zM4 14h5c-.23 1.14-1.3 2-2.5 2s-2.27-.86-2.5-2z"/></svg></span>Question to carry into Module 8</div><div class=admonitionContent_BuS1><p>Do not ask only whether the Job received eight GPUs. Ask whether it received suitable GPUs in a
+useful topology, and whether the complete worker group could start together.</div></div>
+<div class=box_rIgf><div class=bar_GZkM><span class=label_Fo1D>🕹 <!-- -->AI Infrastructure Primer Simulator</span><span class=actions_M17N><button type=button class=btn_nJeE>⛶ Fullscreen</button><a class=full_vR5f href=/304-kubeadv/sims/m8-ai-primer-sim.html target=_blank rel="noopener noreferrer">Open in new tab ↗</a></span></div><div class=frame_X9K3 style="aspect-ratio:16 / 10"><iframe src=/304-kubeadv/sims/m8-ai-primer-sim.html title="AI Infrastructure Primer Simulator" loading=lazy allowfullscreen></iframe></div></div>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id=further-reading>Further reading<a href=#further-reading class=hash-link aria-label="Direct link to Further reading" title="Direct link to Further reading" translate=no>​</a></h2>
+<ul>
+<li class=""><a href=https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/overview.html target=_blank rel="noopener noreferrer" class="">NVIDIA NCCL overview</a></li>
+<li class=""><a href=https://docs.nvidia.com/datacenter/cloud-native/gpu-operator/latest/gpu-operator-rdma.html target=_blank rel="noopener noreferrer" class="">NVIDIA GPUDirect RDMA and GPUDirect Storage</a></li>
+<li class=""><a href=https://kubernetes.io/docs/concepts/extend-kubernetes/compute-storage-net/device-plugins/ target=_blank rel="noopener noreferrer" class="">Kubernetes device plugins</a></li>
+<li class=""><a href=https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/ target=_blank rel="noopener noreferrer" class="">Kubernetes Dynamic Resource Allocation</a></li>
+<li class=""><a href=https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/ target=_blank rel="noopener noreferrer" class="">Kubernetes Topology Manager</a></li>
+<li class=""><a href=https://kueue.sigs.k8s.io/docs/concepts/ target=_blank rel="noopener noreferrer" class="">Kueue core concepts</a></li>
+<li class=""><a href=https://kueue.sigs.k8s.io/docs/concepts/all_or_nothing/ target=_blank rel="noopener noreferrer" class="">Kueue all-or-nothing scheduling</a></li>
+<li class=""><a href=https://kueue.sigs.k8s.io/docs/concepts/topology_aware_scheduling/ target=_blank rel="noopener noreferrer" class="">Kueue Topology-Aware Scheduling</a></li>
+</ul>
+<p>The main Module 8 lesson now starts with the scheduler problem: selecting the right accelerator and
+admitting the complete training workload.</div></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href=/304-kubeadv/docs/m7-networking-data-plane/quiz><div class=pagination-nav__sublabel>Previous</div><div class=pagination-nav__label>Quiz: Networking & the Data Plane</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/304-kubeadv/docs/m8-accelerators-training/lesson><div class=pagination-nav__sublabel>Next</div><div class=pagination-nav__label>Lesson: Scheduling Accelerators and Distributed Model Training</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#ai-workload-foundations class="table-of-contents__link toc-highlight">AI workload foundations</a><ul><li><a href=#ai-training class="table-of-contents__link toc-highlight">AI training</a><li><a href=#ai-inference class="table-of-contents__link toc-highlight">AI inference</a><li><a href=#model-data class="table-of-contents__link toc-highlight">Model data</a><li><a href=#gpu class="table-of-contents__link toc-highlight">GPU</a><li><a href=#hbm class="table-of-contents__link toc-highlight">HBM</a><li><a href=#pci-express class="table-of-contents__link toc-highlight">PCI Express</a><li><a href=#numa class="table-of-contents__link toc-highlight">NUMA</a></ul><li><a href=#distributed-training-foundations class="table-of-contents__link toc-highlight">Distributed training foundations</a><ul><li><a href=#distributed-training class="table-of-contents__link toc-highlight">Distributed training</a><li><a href=#gradient-synchronization class="table-of-contents__link toc-highlight">Gradient synchronization</a><li><a href=#collective-operations class="table-of-contents__link toc-highlight">Collective operations</a><li><a href=#allreduce class="table-of-contents__link toc-highlight">AllReduce</a><li><a href=#nccl class="table-of-contents__link toc-highlight">NCCL</a></ul><li><a href=#gpu-interconnects-and-network-fabrics class="table-of-contents__link toc-highlight">GPU interconnects and network fabrics</a><ul><li><a href=#nvlink class="table-of-contents__link toc-highlight">NVLink</a><li><a href=#nvswitch class="table-of-contents__link toc-highlight">NVSwitch</a><li><a href=#network-fabrics class="table-of-contents__link toc-highlight">Network fabrics</a><li><a href=#rdma class="table-of-contents__link toc-highlight">RDMA</a><li><a href=#gpudirect-rdma class="table-of-contents__link toc-highlight">GPUDirect RDMA</a><li><a href=#scale-up-and-scale-out class="table-of-contents__link toc-highlight">Scale up and scale out</a><li><a href=#topology-aware-placement class="table-of-contents__link toc-highlight">Topology-aware placement</a></ul><li><a href=#kubernetes-accelerator-control class="table-of-contents__link toc-highlight">Kubernetes accelerator control</a><ul><li><a href=#device-plugins class="table-of-contents__link toc-highlight">Device plugins</a><li><a href=#dynamic-resource-allocation class="table-of-contents__link toc-highlight">Dynamic Resource Allocation</a><li><a href=#accelerator-scheduling-layers class="table-of-contents__link toc-highlight">Accelerator scheduling layers</a><li><a href=#gang-scheduling class="table-of-contents__link toc-highlight">Gang scheduling</a><li><a href=#kueue class="table-of-contents__link toc-highlight">Kueue</a><li><a href=#dra-and-kueue-together class="table-of-contents__link toc-highlight">DRA and Kueue together</a><li><a href=#kueue-applicability class="table-of-contents__link toc-highlight">Kueue applicability</a><li><a href=#responsibility-boundaries class="table-of-contents__link toc-highlight">Responsibility boundaries</a></ul><li><a href=#reading-the-module-8-lab class="table-of-contents__link toc-highlight">Reading the Module 8 lab</a><ul><li><a href=#m8-lab-scope class="table-of-contents__link toc-highlight">M8 lab scope</a></ul><li><a href=#further-reading class="table-of-contents__link toc-highlight">Further reading</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>Course</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/304-kubeadv/docs/intro>Introduction</a></ul></div><div class="theme-layout-footer-column col footer__col"><div class=footer__title>School of DevOps & AI</div><ul class="footer__items clean-list"><li class=footer__item><a href=https://github.com/schoolofdevops target=_blank rel="noopener noreferrer" class=footer__link-item>GitHub<svg width=13.5 height=13.5 aria-label="(opens in new tab)" class=iconExternalLink_nPIU><use href=#theme-svg-external-link /></svg></a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 School of DevOps & AI. Built with Docusaurus.</div></div></div></footer></div></body>

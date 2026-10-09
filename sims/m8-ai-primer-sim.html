@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Infrastructure Primer Simulator</title>
+<style>
+  :root{
+    --bg:#0d1220;--panel:#151c2e;--panel2:#111827;--line:#26324e;--line2:#1c2740;
+    --txt:#dbe4f5;--dim:#8494b3;--faint:#5a6a8c;--accent:#4cc9f0;--accent2:#7b6cf6;
+    --ok:#3ddc97;--warn:#f5b842;--bad:#ff6b6b;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{font-size:clamp(10px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg);color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{height:100%;display:flex;flex-direction:column;gap:6px;padding:8px 10px}
+
+  header{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  h1{font-size:1.05rem;white-space:nowrap}
+  h1 .k{color:var(--accent)}
+  #subtitle{font-size:.8rem;color:var(--faint);font-family:var(--mono);margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #reset{background:none;color:var(--dim);border:1px solid var(--line);border-radius:6px;padding:3px 9px;font-size:.88rem;cursor:pointer;min-height:24px}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  #challenge{display:flex;align-items:center;gap:10px;background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.08));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 10px;min-height:32px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge .tag{font-size:.8rem;letter-spacing:.8px;font-weight:700;color:var(--accent2);text-transform:uppercase;white-space:nowrap}
+  #challenge .stepDots{display:flex;gap:5px}
+  .dot{width:1.2rem;height:1.2rem;border-radius:50%;border:1.5px solid var(--faint);color:var(--faint);
+    display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700}
+  .dot.cur{border-color:var(--accent);color:var(--accent)}
+  .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #goal{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #goal code{font-family:var(--mono);font-size:.86rem;color:var(--accent)}
+
+  #main{display:grid;grid-template-columns:minmax(240px,0.44fr) 1fr;gap:6px;flex:1;min-height:0}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;min-height:0;display:flex;flex-direction:column}
+  .panel h2{font-size:.8rem;letter-spacing:.9px;font-weight:700;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+  .panel h2 span{color:var(--line);font-size:.72rem;text-transform:none}
+
+  .row{display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .row label{font-size:.75rem;color:var(--dim);width:98px;flex:0 0 auto}
+  .btns{display:flex;flex-wrap:wrap;gap:5px}
+  .btn{border:1px solid var(--line);background:var(--panel2);color:var(--txt);font:700 .72rem var(--mono);
+    border-radius:6px;padding:3px 6px;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel2))}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.warn{border-color:var(--warn);color:var(--warn)}
+  #workers{accent-color:var(--accent);cursor:pointer;min-width:150px}
+
+  #run{margin-top:auto;padding:7px 10px;border-radius:8px;border:1px solid var(--ok);background:color-mix(in srgb,var(--ok) 10%,var(--panel2));
+    color:var(--ok);font-size:.92rem;font-weight:700;cursor:pointer}
+  #run:hover:not(:disabled){background:color-mix(in srgb,var(--ok) 20%,var(--panel2))}
+
+  #status{margin-top:6px;font-family:var(--mono);font-size:.73rem;color:var(--dim);min-height:1.4rem}
+  #status b{color:var(--txt)}
+
+  #insights{overflow:auto}
+  .kpi{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px}
+  .kpi .card{border:1px solid var(--line);background:var(--panel2);border-radius:7px;padding:6px}
+  .kpi .card .k{font-family:var(--mono);font-size:.68rem;color:var(--dim);margin-bottom:3px}
+  .kpi .card .v{font-size:1.05rem;font-weight:700;color:var(--accent)}
+  .kpi .card .sub{font-size:.66rem;color:var(--faint)}
+
+  .barRow{display:grid;grid-template-columns:1.2fr .8fr 3.2rem;align-items:center;gap:7px;margin:2px 0 8px}
+  .barRow .lab{font-family:var(--mono);font-size:.74rem;color:var(--dim)}
+  .track{height:9px;background:#0a0f1c;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+  .fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .25s ease,width .25s ease}
+  .fill.warn{background:linear-gradient(90deg,var(--warn),#e8aa2f)}
+  .fill.bad{background:linear-gradient(90deg,var(--bad),#ff8d8d)}
+  .barVal{font-family:var(--mono);font-size:.74rem;color:var(--txt);text-align:right;white-space:nowrap}
+
+  #eventLog{flex:1;overflow:auto;font-family:var(--mono);font-size:.75rem;line-height:1.45;color:var(--txt)}
+  #eventLog .line{padding:2px 4px;border-radius:4px;background:rgba(76,201,240,.05);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #eventLog .ok{color:var(--ok)}
+  #eventLog .warn{color:var(--warn)}
+  #eventLog .bad{color:var(--bad)}
+
+  .hint{font-size:.7rem;color:var(--faint);margin-top:4px}
+  #next{margin-left:auto;padding:5px 10px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;color:var(--dim);cursor:pointer}
+  #next:hover{border-color:var(--accent);color:var(--accent)}
+
+  @media (max-width:860px){
+    body{overflow:auto}
+    #main{grid-template-columns:1fr}
+    #app{height:auto;min-height:100%}
+    h1{white-space:normal}
+    #subtitle{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1><span class="k">🧠</span> AI Infrastructure Primer Simulator</h1>
+    <span id="subtitle">Model fit, placement, and network tradeoffs before the M8 lab</span>
+    <button id="reset" title="Clear simulation history and return to the recommended start state">↺ Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Challenge</span>
+    <span class="stepDots">
+      <span class="dot" id="d1">1</span>
+      <span class="dot" id="d2">2</span>
+      <span class="dot" id="d3">3</span>
+    </span>
+    <span id="goal" class="txt">configure scenario, then run</span>
+    <button id="next" title="Move to the next scenario after step 1 and 2 are complete">Next scenario</button>
+  </div>
+
+  <div id="main">
+    <section class="panel" id="controls">
+      <h2>Scenario controls <span>set workload and placement first</span></h2>
+
+      <div class="row">
+        <label>Workload</label>
+        <div class="btns" id="modeBtns">
+          <button class="btn on" id="mode-inference">Inference</button>
+          <button class="btn" id="mode-training">Training</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Model</label>
+        <div class="btns" id="modelBtns">
+          <button class="btn on" data-model="small">Small</button>
+          <button class="btn" data-model="medium">Medium</button>
+          <button class="btn" data-model="large">Large</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Workers</label>
+        <input type="range" id="workers" min="1" max="8" value="1" step="1">
+        <span id="workersVal" style="font-family:var(--mono);font-size:.78rem;min-width:1.8rem;text-align:right;color:var(--accent)">1</span>
+      </div>
+
+      <div class="row">
+        <label>Topology</label>
+        <div class="btns" id="topoBtns">
+          <button class="btn on" data-topo="nvlink">Same host + NVLink</button>
+          <button class="btn" data-topo="pcie">Same host + PCIe</button>
+          <button class="btn" data-topo="rdma">Cross host + RDMA</button>
+          <button class="btn" data-topo="ethernet">Cross host + Ethernet</button>
+        </div>
+      </div>
+
+      <button id="run" title="Calculate memory fit, communication and step time">Run scenario</button>
+      <div id="status"></div>
+
+      <p class="hint">Tip: when a case fails fit, change GPU size or reduce workers/model size before comparing topologies.</p>
+    </section>
+
+    <section class="panel" id="insights">
+      <h2>Expected behavior <span>use these metrics in the lab</span></h2>
+      <div class="kpi">
+        <div class="card">
+          <div class="k">per-gpu HBM used</div>
+          <div class="v" id="memNeed">0 GiB</div>
+          <div class="sub" id="memBudget">A100-80Gi budget</div>
+        </div>
+        <div class="card">
+          <div class="k">estimated step</div>
+          <div class="v"><span id="stepMs">0</span> ms</div>
+          <div class="sub" id="dominion">dominant path: -</div>
+        </div>
+        <div class="card">
+          <div class="k">effective throughput</div>
+          <div class="v"><span id="throughput">—</span></div>
+          <div class="sub" id="fitBadge">fit status</div>
+        </div>
+      </div>
+
+      <div class="barRow">
+        <span class="lab">Compute path</span>
+        <div class="track"><div id="computeFill" class="fill" style="width:0"></div></div>
+        <span id="computeMs" class="barVal">0 ms</span>
+      </div>
+      <div class="barRow">
+        <span class="lab">Communication path</span>
+        <div class="track"><div id="commFill" class="fill" style="width:0"></div></div>
+        <span id="commMs" class="barVal">0 ms</span>
+      </div>
+
+      <h2>Timeline / event log <span>what to check during lab incidents</span></h2>
+      <div id="eventLog" aria-live="polite"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var $ = function(id){return document.getElementById(id)};
+
+  var MODELS = {
+    small:{name:'Small CNN-like',weights:8,activations:2,optimizer:3,kv:1,trainingBase:210},
+    medium:{name:'Mid-size transformer',weights:38,activations:9,optimizer:34,kv:3,trainingBase:520},
+    large:{name:'Foundation-style LLM',weights:130,activations:26,optimizer:120,kv:10,trainingBase:1500}
+  };
+
+  var TOPO = {
+    nvlink:{name:'Same host + NVLink',bandwidth:600,latMs:1.2,note:'same-socket, low latency fabric'},
+    pcie:{name:'Same host + PCIe',bandwidth:140,latMs:4.5,note:'same box, slower than NVLink'},
+    rdma:{name:'Cross host + RDMA',bandwidth:250,latMs:6.2,note:'good for distributed jobs across servers'},
+    ethernet:{name:'Cross host + Ethernet',bandwidth:25,latMs:12,note:'usually the bottleneck in all-reduce-heavy training'}
+  };
+
+  var CHALLENGES = [
+    {
+      title:'Step 1: run a single-worker inference case and confirm HBM fit.',
+      check:function(s){ return s.mode==='inference' && s.model==='small' && s.workers===1 && s.topo==='nvlink'; }
+    },
+    {
+      title:'Step 2: run large training on 4 workers with NVLink and observe communication vs compute.',
+      check:function(s){ return s.mode==='training' && s.model==='large' && s.workers===4 && s.topo==='nvlink'; }
+    },
+    {
+      title:'Step 3: keep 4-worker training but switch to Ethernet and compare the penalty.',
+      check:function(s){ return s.mode==='training' && s.workers===4 && s.model==='large' && s.topo==='ethernet'; }
+    }
+  ];
+
+  var state = {
+    mode:'inference', model:'small', workers:1, topo:'nvlink',
+    progress:0, gpuName:'A100-80Gi', gpuGiB:80, stepCount:0,
+    last:{ok:false,fit:false}
+  };
+
+  function setMode(m){
+    state.mode=m;
+    var buttons=$('modeBtns').querySelectorAll('.btn');
+    buttons.forEach(function(btn){btn.classList.toggle('on', btn.id === 'mode-' + m);});
+    log('Mode set to ' + m + ' workload.', 'ok');
+  }
+
+  function setModel(key){
+    state.model=key;
+    $('modelBtns').querySelectorAll('.btn').forEach(function(btn){
+      btn.classList.toggle('on', btn.dataset.model === key);
+    });
+    log('Model set to ' + MODELS[key].name + '.', 'ok');
+  }
+
+  function setTopo(key){
+    state.topo=key;
+    $('topoBtns').querySelectorAll('.btn').forEach(function(btn){
+      btn.classList.toggle('on', btn.dataset.topo === key);
+    });
+  }
+
+  function fmt1(v){ return Math.round(v*10)/10; }
+  function fmtInt(v){ return Math.round(v*10)/10; }
+
+  function run(){
+    var m = MODELS[state.model];
+    var t = TOPO[state.topo];
+    var w = state.workers;
+
+    var perWorkerBase = m.weights + m.activations + m.optimizer;
+    var perWorker = state.mode === 'training' ? perWorkerBase : (m.weights + m.kv);
+
+    if(state.mode === 'training'){
+      perWorker += Math.max(0, m.trainingBase/1200 * m.weights * 0.18);
+    }
+
+    var totalGiBPerWorker = fmt1(perWorker);
+    var hbmFit = totalGiBPerWorker <= state.gpuGiB;
+
+    var compute = m.trainingBase * (state.mode === 'training' ? 1.3 : 0.35);
+    compute = compute * (m.weights/38);
+    var computeScale = 1 / Math.sqrt(Math.max(1, w));
+    if(state.mode === 'training'){
+      computeScale *= 1.1;
+    }
+    compute = compute * computeScale;
+
+    var payloadGiB = m.weights * (state.mode === 'training' ? 2.1 : 0.42) * Math.log2(Math.max(1, w));
+    var rawComm = payloadGiB / t.bandwidth * 1000;
+    var comm = Math.max(0, rawComm * 0.9 + t.latMs * 2 * Math.log2(Math.max(1, w)));
+
+    var totalMs = compute + comm;
+    var domination = compute >= comm ? 'compute path' : 'communication path';
+    var throughput = hbmFit ? (w >= 2 ? 'faster with more workers' : 'single-worker baseline') : 'N/A (OOM)';
+
+    if(!hbmFit){
+      totalMs += 120;
+      state.last.ok=false;
+    }
+
+    state.last={
+      ok:hbmFit, fit:hbmFit, workers:w, mode:state.mode, model:state.model, topo:state.topo,
+      mem:totalGiBPerWorker, compute:compute, comm:comm, total:totalMs, throughput:throughput, domination:domination
+    };
+
+    if(hbmFit){
+      log('Run complete: total model state per worker ' + totalGiBPerWorker + ' GiB; within ' + state.gpuGiB + ' GiB HBM.', 'ok');
+    } else {
+      log('Run blocked: model state per worker ' + totalGiBPerWorker + ' GiB exceeds ' + state.gpuGiB + ' GiB HBM.', 'bad');
+    }
+
+    if(state.progress < CHALLENGES.length && CHALLENGES[state.progress].check(state)){
+      log('Challenge step ' + (state.progress + 1) + ' matched: ' + CHALLENGES[state.progress].title, 'ok');
+      state.progress += 1;
+      if(state.progress === CHALLENGES.length){
+        log('All 3 primer challenges complete. Next, map these outcomes to the M8 lab flow.', 'ok');
+      }
+    }
+
+    renderBars();
+    renderStatus();
+    updateChallenge();
+    state.stepCount += 1;
+  }
+
+  function log(text, kind){
+    var row = document.createElement('div');
+    row.className = 'line ' + kind;
+    row.textContent = (new Date().toLocaleTimeString()) + ' · ' + text;
+    var logArea = $('eventLog');
+    logArea.appendChild(row);
+    while(logArea.children.length > 42){
+      logArea.removeChild(logArea.firstChild);
+    }
+    logArea.scrollTop = logArea.scrollHeight;
+  }
+
+  function renderBars(){
+    if(!state.last){return;}
+    var c = state.last.compute;
+    var co = state.last.comm;
+    var total = Math.max(1, c + co);
+    var computePct = Math.round(Math.min(100, c / total * 100));
+    var commPct = Math.round(Math.min(100, co / total * 100));
+
+    var fit = state.last.fit;
+    var mem = state.last.mem;
+    var memPct = Math.round(Math.min(100, mem / state.gpuGiB * 100));
+
+    $('memNeed').textContent = mem + ' GiB';
+    $('memBudget').textContent = state.gpuName + ' budget';
+    $('computeMs').textContent = fmt1(c) + ' ms';
+    $('commMs').textContent = fmt1(co) + ' ms';
+    $('stepMs').textContent = fmtInt(state.last.total);
+    $('dominion').textContent = 'dominant path: ' + state.last.domination;
+    $('throughput').textContent = state.last.throughput;
+    $('fitBadge').textContent = fit ? 'fit: pass' : 'fit: fail (OOM)';
+    $('fitBadge').style.color = fit ? 'var(--ok)' : 'var(--bad)';
+
+    $('memNeed').style.color = fit ? 'var(--txt)' : 'var(--bad)';
+
+    $('computeFill').style.width = computePct + '%';
+    $('commFill').style.width = commPct + '%';
+
+    $('computeFill').classList.toggle('warn', fit && computePct >= 75 && computePct >= commPct);
+    $('computeFill').classList.toggle('bad', !fit);
+    $('commFill').classList.toggle('warn', fit && commPct > 75);
+    $('commFill').classList.toggle('bad', !fit);
+
+    if(!fit){
+      $('dominion').textContent = 'dominant path: memory pressure';
+      $('fitBadge').classList = 'bad';
+      $('status').style.color = 'var(--bad)';
+      $('status').innerHTML = '<b>Not fit</b> on ' + state.gpuName + '. Increase GPU memory or lower model/workers.';
+    } else {
+      $('status').style.color = 'var(--ok)';
+      $('status').innerHTML = '<b>Fit</b> with current settings.';
+    }
+  }
+
+  function renderStatus(){
+    if(!state.last){
+      $('status').textContent = 'Start with small inference and run to establish baseline.';
+      return;
+    }
+    if(state.mode === 'training' && state.topo === 'ethernet' && state.workers >= 4){
+      log('Ethernet path usually raises coordination cost for all-reduce training.', 'warn');
+    }
+  }
+
+  function updateChallenge(){
+    for(var i=1;i<=3;i++){
+      var d=$('d' + i);
+      d.className = 'dot' + (state.progress >= i ? ' done' : state.progress === i - 1 ? ' cur' : '');
+      d.textContent = state.progress >= i ? '✓' : i;
+    }
+
+    var ch = CHALLENGES[Math.min(state.progress, CHALLENGES.length - 1)] || CHALLENGES[CHALLENGES.length - 1];
+    var done = state.progress >= CHALLENGES.length;
+    if(done){
+      $('challenge').classList.add('success');
+      $('goal').textContent = 'All primer challenges complete. Compare your intuition with the module lab next.';
+    } else {
+      $('challenge').classList.remove('success');
+      $('goal').innerHTML = '<code>Step ' + (state.progress + 1) + '/3</code> ' + ch.title;
+    }
+
+    $('next').disabled = !done;
+  }
+
+  function bootstrap(){
+    setMode('inference');
+    setModel('small');
+    setTopo('nvlink');
+    $('workers').value = '1';
+    $('workersVal').textContent = 1;
+    updateChallenge();
+    $('status').innerHTML = '<b>Ready</b>. This sim has no API calls and no external URLs.';
+    $('eventLog').innerHTML = '';
+
+    log('Simulator ready — start with small inference to establish a baseline, then complete all three scenarios.', 'ok');
+  }
+
+  $('modelBtns').addEventListener('click', function(e){
+    var btn = e.target.closest('.btn');
+    if(!btn || !btn.dataset.model) return;
+    setModel(btn.dataset.model);
+  });
+
+  $('topoBtns').addEventListener('click', function(e){
+    var btn = e.target.closest('.btn');
+    if(!btn || !btn.dataset.topo) return;
+    setTopo(btn.dataset.topo);
+    log('Topology set to ' + TOPO[state.topo].name + ': ' + TOPO[state.topo].note, 'info');
+  });
+
+  $('modeBtns').addEventListener('click', function(e){
+    var btn = e.target.closest('.btn');
+    if(!btn) return;
+    if(btn.id === 'mode-training') setMode('training');
+    if(btn.id === 'mode-inference') setMode('inference');
+  });
+
+  $('workers').addEventListener('input', function(e){
+    state.workers = +e.target.value;
+    $('workersVal').textContent = e.target.value;
+  });
+
+  $('run').addEventListener('click', run);
+
+  $('next').addEventListener('click', function(){
+    if(state.progress < CHALLENGES.length){return;}
+    log('Use the existing lab simulator for next-step workload controls after these three primer checks.', 'info');
+    state.progress = 0;
+    state.stepCount = 0;
+    state.last = null;
+    $('eventLog').innerHTML = '';
+    bootstrap();
+    $('fitBadge').textContent = 'fit status';
+    $('stepMs').textContent = '0';
+    $('throughput').textContent = '—';
+    $('computeMs').textContent = '0 ms';
+    $('commMs').textContent = '0 ms';
+    $('memNeed').textContent = '0 GiB';
+    $('dominion').textContent = 'dominant path: -';
+    $('fitBadge').style.color = '';
+    $('computeFill').style.width = '0%';
+    $('commFill').style.width = '0%';
+    $('status').textContent = 'Ready for another learning pass.';
+  });
+
+  $('reset').addEventListener('click', function(){
+    state.progress = 0;
+    state.stepCount = 0;
+    state.last = null;
+    bootstrap();
+    $('eventLog').innerHTML = '';
+    $('computeMs').textContent = '0 ms';
+    $('commMs').textContent = '0 ms';
+    $('stepMs').textContent = '0';
+    $('throughput').textContent = '—';
+    $('fitBadge').textContent = 'fit status';
+    $('dominion').textContent = 'dominant path: -';
+    $('status').textContent = 'Reset complete. Run again with a fresh baseline.';
+    $('computeFill').style.width = '0%';
+    $('commFill').style.width = '0%';
+  });
+
+  // expose simple read-only hook for any future docs checks
+  window.__primerSim = {
+    state: function(){return state;},
+    run: run,
+    setMode: setMode,
+    setModel: setModel,
+    setTopo: setTopo
+  };
+
+  bootstrap();
+})();
+</script>
+</body>
+</html>
