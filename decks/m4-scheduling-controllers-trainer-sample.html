@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Module 4: Scheduling and controllers, trainer sample</title>
+  <style>
+    @font-face{font-family:"Patrick Hand";src:url("../fonts/patrick-hand.woff2") format("woff2");font-style:normal;font-weight:400;font-display:swap}
+    :root{
+      --ink:#1f2933;--muted:#5f6b76;--line:#d7dce1;--paper:#ffffff;--soft:#f7f8fa;
+      --blue:#dceeff;--blue-strong:#2563a6;--yellow:#fff1b8;--green:#dcefdc;
+      --rose:#f8dfe0;--lavender:#eee3f7;--peach:#ffe7cc;--code:#18212b;
+    }
+    *{box-sizing:border-box}
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#fff;color:var(--ink)}
+    body{font-family:Arial,"Helvetica Neue",sans-serif}
+    #viewport{position:relative;width:100%;height:100%;background:#fff}
+    #deck{position:absolute;left:0;top:0;width:1600px;height:900px;transform-origin:top left;background:var(--paper)}
+    .slide{position:absolute;inset:0;display:none;padding:52px 72px 60px;background:var(--paper);overflow:hidden}
+    .slide.active{display:block}
+    .eyebrow{margin:0 0 11px;color:var(--blue-strong);font-size:18px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}
+    h1,h2,h3{font-family:"Patrick Hand",Arial,sans-serif;color:var(--ink)}
+    h1{margin:0;font-size:68px;line-height:1.04;font-weight:400;letter-spacing:.2px}
+    h2{margin:0;font-size:37px;line-height:1.12;font-weight:400}
+    h3{margin:0;font-size:29px;line-height:1.14;font-weight:400}
+    p{margin:0;font-size:25px;line-height:1.38}
+    code,pre{font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+    code{font-size:.87em}
+    .subhead{margin-top:10px;max-width:1260px;color:var(--muted);font-size:27px;line-height:1.32}
+    .body{height:570px;margin-top:30px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:42px;align-items:stretch}
+    .grid-5-7{display:grid;grid-template-columns:5fr 7fr;gap:42px;align-items:stretch}
+    .grid-7-5{display:grid;grid-template-columns:7fr 5fr;gap:42px;align-items:stretch}
+    .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:25px}
+    .card{padding:25px 27px;border:1px solid var(--line);border-radius:16px;background:var(--soft);text-align:left}
+    .card h2,.card h3{margin-bottom:9px}
+    .card p{color:var(--muted);font-size:22px;line-height:1.3}
+    .blue{background:var(--blue)}.yellow{background:var(--yellow)}.green{background:var(--green)}
+    .rose{background:var(--rose)}.lavender{background:var(--lavender)}.peach{background:var(--peach)}
+    .bullets{margin:0;padding:0;list-style:none;display:grid;gap:20px}
+    .bullets li{position:relative;padding-left:28px;font-size:27px;line-height:1.3}
+    .bullets li::before{content:"";position:absolute;left:0;top:.48em;width:10px;height:10px;border:2px solid var(--blue-strong);border-radius:50%}
+    .bullets.compact{gap:13px}.bullets.compact li{font-size:23px;line-height:1.26}
+    .code-card,.terminal{border-radius:15px;padding:23px 25px;text-align:left;overflow:hidden}
+    .code-card{border:1px solid var(--line);background:#f5f6f8}
+    .terminal{background:var(--code);color:#f4f6f8}
+    pre{margin:0;font-size:19px;line-height:1.44;white-space:pre-wrap}
+    .terminal .dim{color:#aab2bb}.terminal .focus{color:#fff0a8;font-weight:800}.terminal .bad{color:#ffb3b3}.terminal .good{color:#b8efc1}
+    .callout{padding:18px 21px;border-left:5px solid var(--blue-strong);border-radius:0 12px 12px 0;background:#eef6ff;font-size:23px;line-height:1.34}
+    .callout strong{display:block;margin-bottom:5px}
+    .pageno{position:absolute;right:265px;bottom:23px;color:#a7afb8;font:22px "Patrick Hand",Arial,sans-serif}
+    .diagram{display:flex;align-items:center;justify-content:center;gap:14px}
+    .node{min-width:180px;padding:20px;border:2px solid var(--ink);border-radius:17px;background:#fff;text-align:center;box-shadow:4px 5px 0 #e8ebee}
+    .node b{display:block;font:29px "Patrick Hand",Arial,sans-serif}.node span{display:block;margin-top:6px;color:var(--muted);font-size:18px;line-height:1.25}
+    .arrow{font:42px "Patrick Hand",Arial,sans-serif;color:var(--muted)}
+    .pipeline{display:grid;grid-template-columns:repeat(6,1fr);gap:15px;align-items:stretch}
+    .stage{min-height:185px;padding:22px 17px;border:2px solid var(--ink);border-radius:17px;background:#fff;position:relative;text-align:center}
+    .stage::after{content:"→";position:absolute;right:-22px;top:62px;color:var(--muted);font:34px "Patrick Hand",Arial,sans-serif;z-index:2}
+    .stage:last-child::after{display:none}.stage .num{display:grid;place-items:center;width:35px;height:35px;margin:0 auto 10px;border-radius:50%;background:var(--blue);font-weight:800}
+    .stage h3{font-size:27px}.stage p{margin-top:8px;color:var(--muted);font-size:18px;line-height:1.24}
+    .compare{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:stretch}
+    .compare .panel{padding:26px 29px;border:1px solid var(--line);border-radius:17px;background:var(--soft)}
+    .compare .panel h2{margin-bottom:16px}.compare .panel p{font-size:22px;color:var(--muted)}
+    .label{display:inline-block;margin-bottom:10px;padding:6px 11px;border-radius:20px;background:#e8eef5;color:#344454;font-size:16px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+    .equation{display:flex;align-items:center;justify-content:center;gap:16px;margin:28px 0;padding:24px;border-radius:16px;background:var(--yellow);font-size:29px;font-weight:750}
+    .table{width:100%;border-collapse:collapse;font-size:21px;line-height:1.25;text-align:left}
+    .table th{padding:14px 16px;background:#edf2f7;border:1px solid var(--line);font-size:20px}
+    .table td{padding:14px 16px;border:1px solid var(--line);vertical-align:top}
+    .table code{font-size:.82em}.table .reason{font-weight:800;color:#9a3131}
+    .rank-list{display:grid;gap:18px;margin-top:12px}.rank{display:grid;grid-template-columns:62px 1fr 110px;align-items:center;gap:18px;padding:18px 22px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}
+    .rank .place{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;background:var(--blue);font-size:23px;font-weight:800}.rank .score{text-align:right;font-size:24px;font-weight:800}
+    .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:25px;align-items:stretch}.flow .step{position:relative;padding:24px;border:1px solid var(--line);border-radius:15px;background:var(--soft)}
+    .flow .step::after{content:"→";position:absolute;right:-25px;top:44%;font:36px "Patrick Hand",Arial,sans-serif;color:var(--muted)}.flow .step:last-child::after{display:none}
+    .flow .step h3{font-size:27px}.flow .step p{margin-top:8px;color:var(--muted);font-size:20px;line-height:1.28}
+    .timeline{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:30px;margin-top:55px}.timeline::before{content:"";position:absolute;left:9%;right:9%;top:31px;border-top:3px solid var(--ink)}
+    .moment{position:relative;padding-top:58px;text-align:center}.moment .dot{position:absolute;top:17px;left:50%;width:29px;height:29px;border:4px solid var(--ink);border-radius:50%;background:#fff;transform:translateX(-50%)}.moment h3{font-size:27px}.moment p{margin-top:7px;color:var(--muted);font-size:19px;line-height:1.25}
+    .series-map{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:34px}.series-item{min-height:154px;padding:22px 24px;border:1px solid var(--line);border-radius:15px;background:var(--soft)}
+    .series-item .n{color:var(--blue-strong);font-size:17px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.series-item h3{margin-top:7px;font-size:27px}.series-item p{margin-top:6px;color:var(--muted);font-size:18px;line-height:1.25}
+    .divider{padding:0;background:#f8fbff}.divider .band{height:100%;display:grid;grid-template-columns:380px 1fr;align-items:center;gap:65px;padding:80px 110px}.divider .lesson-no{display:grid;place-items:center;width:280px;height:280px;border:3px solid var(--ink);border-radius:50%;background:var(--blue);font:86px "Patrick Hand",Arial,sans-serif;box-shadow:8px 9px 0 #e0e7ef}
+    .divider h1{font-size:74px}.divider .outcome{margin-top:20px;padding:18px 22px;border-left:5px solid var(--blue-strong);background:#fff;font-size:27px;line-height:1.35}
+    .title-layout{display:grid;grid-template-columns:1.05fr .95fr;gap:70px;align-items:center;height:770px}.title-layout .credit{margin-top:30px;color:var(--muted);font-size:22px}.title-layout .diagram{flex-direction:column;gap:20px}.title-layout .row{display:flex;align-items:center;gap:18px}
+    .summary-list{display:grid;gap:15px;margin-top:24px}.summary-row{display:grid;grid-template-columns:54px 1fr;gap:17px;align-items:center;padding:15px 18px;border:1px solid var(--line);border-radius:13px;background:var(--soft)}.summary-row .n{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:var(--blue);font-weight:800}.summary-row p{font-size:23px}
+    .fragment{opacity:0;transform:translateY(8px);transition:opacity .18s ease,transform .18s ease}.fragment.visible{opacity:1;transform:none}
+    .nav-controls{position:fixed;right:24px;bottom:18px;z-index:10;display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #ddd;border-radius:24px;background:rgba(255,255,255,.92);font-family:Arial,sans-serif}.nav-controls button{width:36px;height:30px;border:0;border-radius:16px;background:#edf2f7;color:#293845;font-size:22px;cursor:pointer}.nav-controls .counter{min-width:54px;text-align:center;color:#68737e;font-size:14px}
+  </style>
+</head>
+<body>
+<div id="viewport"><main id="deck">
+
+  <section class="slide">
+    <div class="title-layout">
+      <div>
+        <p class="eyebrow">Module 4 | Advanced Kubernetes</p>
+        <h1>Scheduling and controllers</h1>
+        <p class="subhead">How Kubernetes selects a node, processes changes and reacts to node failure.</p>
+        <p class="credit"><b>Gourav Shah</b> | School of DevOps &amp; AI | Lesson + Lab + Quiz</p>
+      </div>
+      <div class="diagram">
+        <div class="node rose"><b>Pod</b><span>Pending<br>no node assigned</span></div>
+        <div class="arrow">↓</div>
+        <div class="row"><div class="node blue"><b>Scheduler</b><span>selects a node</span></div><div class="node lavender"><b>Controllers</b><span>keep checking state</span></div></div>
+        <div class="arrow">↓</div>
+        <div class="node green"><b>Running workload</b><span>placed and managed</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Module map</p>
+    <h1>Six lessons in this module</h1>
+    <p class="subhead">Each part can be one Udemy lecture or one video in the series.</p>
+    <div class="series-map">
+      <div class="series-item blue"><div class="n">Lesson 1</div><h3>Scheduling cycle</h3><p>Follow one Pod from the queue to a binding.</p></div>
+      <div class="series-item yellow"><div class="n">Lesson 2</div><h3>Placement rules</h3><p>Resources, labels, taints and scoring.</p></div>
+      <div class="series-item rose"><div class="n">Lesson 3</div><h3>Pending Pods</h3><p>Read the event and choose the correct check.</p></div>
+      <div class="series-item lavender"><div class="n">Lesson 4</div><h3>Controller internals</h3><p>Informer, queue, reconcile, backoff and Lease.</p></div>
+      <div class="series-item peach"><div class="n">Lesson 5</div><h3>Node failure</h3><p>Node health, taints, timers and eviction.</p></div>
+      <div class="series-item green"><div class="n">Lesson 6</div><h3>Lab proof</h3><p>KWOK, FailedScheduling and TaintManagerEviction.</p></div>
+    </div>
+  </section>
+
+  <section class="slide divider"><div class="band"><div class="lesson-no">01</div><div><p class="eyebrow">Lesson 1</p><h1>How Kubernetes schedules a Pod</h1><div class="outcome"><b>By the end:</b> you can explain the scheduling cycle and show where the selected node is recorded.</div></div></div></section>
+
+  <section class="slide">
+    <p class="eyebrow">Scheduling starts here</p>
+    <h1>A new Pod has no node yet</h1>
+    <p class="subhead">The API server stores the Pod first. The scheduler must assign a node.</p>
+    <div class="body grid-5-7">
+      <div>
+        <ul class="bullets">
+          <li>The Pod exists in the API.</li>
+          <li><code>spec.nodeName</code> is empty.</li>
+          <li>The Pod phase remains <code>Pending</code>.</li>
+          <li>The scheduler watches for this state.</li>
+        </ul>
+        <div class="callout" style="margin-top:28px"><strong>Teaching cue</strong>A Pod object is not yet a running container. Placement must happen first.</div>
+      </div>
+      <div class="code-card"><pre>apiVersion: v1
+kind: Pod
+metadata:
+  name: api-worker
+spec:
+  # nodeName is not set
+  containers:
+  - name: worker
+    image: registry.k8s.io/pause:3.9
+
+status:
+  phase: Pending</pre></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Scheduling cycle</p>
+    <h1>One Pod moves through one scheduling cycle</h1>
+    <p class="subhead">The scheduler processes one unscheduled Pod and writes one placement decision.</p>
+    <div class="body" style="height:590px;margin-top:42px">
+      <div class="pipeline">
+        <div class="stage blue"><div class="num">1</div><h3>Queue</h3><p>Wait for a scheduling attempt.</p></div>
+        <div class="stage rose"><div class="num">2</div><h3>Filter</h3><p>Remove nodes that fail a hard rule.</p></div>
+        <div class="stage yellow"><div class="num">3</div><h3>Score</h3><p>Rank the nodes that remain.</p></div>
+        <div class="stage lavender"><div class="num">4</div><h3>Reserve</h3><p>Update scheduler state for the assumed placement.</p></div>
+        <div class="stage peach"><div class="num">5</div><h3>Permit</h3><p>Run any final approval step.</p></div>
+        <div class="stage green"><div class="num">6</div><h3>Bind</h3><p>Write the node name to the Pod.</p></div>
+      </div>
+      <div class="callout" style="margin:36px auto 0;max-width:1100px"><strong>What happens after bind?</strong>The kubelet on the selected node sees the Pod and starts the containers.</div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">The scheduling decision</p>
+    <h1>Bind records the node name</h1>
+    <p class="subhead">The result of scheduling is an API write, not a container start command.</p>
+    <div class="body compare">
+      <div class="panel rose"><span class="label">Before scheduling</span><h2>Pod is waiting</h2><div class="code-card" style="margin-top:18px"><pre>spec:
+  nodeName: ""
+
+status:
+  phase: Pending</pre></div><p style="margin-top:18px">The scheduler can consider this Pod.</p></div>
+      <div class="panel green"><span class="label">After bind</span><h2>Pod has an assigned node</h2><div class="code-card" style="margin-top:18px"><pre>spec:
+  nodeName: kwok-node-1
+
+status:
+  phase: Pending</pre></div><p style="margin-top:18px">The kubelet now owns the next step. The phase may remain Pending while containers start.</p></div>
+    </div>
+  </section>
+
+  <section class="slide divider"><div class="band"><div class="lesson-no">02</div><div><p class="eyebrow">Lesson 2</p><h1>How placement rules select a node</h1><div class="outcome"><b>By the end:</b> you can tell which rules reject a node and which inputs affect ranking.</div></div></div></section>
+
+  <section class="slide">
+    <p class="eyebrow">Filter stage</p>
+    <h1>Filters apply hard placement rules</h1>
+    <p class="subhead">A node must pass every required rule before it can be scored.</p>
+    <div class="body grid-3" style="height:525px;margin-top:48px">
+      <div class="card rose"><h2>Resources</h2><p>Can this one node satisfy the Pod's CPU and memory requests?</p><div class="callout" style="margin-top:28px"><strong>Event</strong><code>Insufficient cpu</code></div></div>
+      <div class="card yellow"><h2>Labels and affinity</h2><p>Do the node labels match the Pod's selector or required affinity?</p><div class="callout" style="margin-top:28px"><strong>Event</strong><code>didn't match node selector</code></div></div>
+      <div class="card lavender"><h2>Taints</h2><p>Does the Pod tolerate every <code>NoSchedule</code> taint on the node?</p><div class="callout" style="margin-top:28px"><strong>Event</strong><code>untolerated taint</code></div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Resource fit</p>
+    <h1>Resource requests must fit on one node</h1>
+    <p class="subhead">The scheduler uses requests. It does not use the current CPU graph for placement.</p>
+    <div class="body grid-7-5">
+      <div class="code-card"><pre>resources:
+  requests:
+    cpu: "9000"
+    memory: 4Gi
+
+# Candidate node
+Allocatable CPU: 32
+Already requested: 28
+Free for scheduling: 4</pre></div>
+      <div>
+        <div class="equation"><span>28 used</span><span>+</span><span>9000 requested</span><span>&gt;</span><span>32 allocatable</span></div>
+        <ul class="bullets compact">
+          <li>The request must fit on one node.</li>
+          <li>Adding many small nodes may not help one very large Pod.</li>
+          <li>Fix the request or add a node that can satisfy it.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Label contract</p>
+    <h1>A node selector requires a matching label</h1>
+    <p class="subhead">The Pod asks for a label. At least one eligible node must have it.</p>
+    <div class="body compare">
+      <div class="panel yellow"><span class="label">Pod requirement</span><div class="code-card"><pre>spec:
+  nodeSelector:
+    disktype: nvme</pre></div><ul class="bullets compact" style="margin-top:24px"><li>This is a hard rule.</li><li>A spelling error can block the Pod.</li></ul></div>
+      <div class="panel blue"><span class="label">Live node labels</span><div class="terminal"><pre>$ kubectl get nodes \
+  -L disktype
+
+NAME          DISKTYPE
+worker-0      ssd
+kwok-node-1   &lt;none&gt;</pre></div><div class="callout" style="margin-top:22px"><strong>Result</strong>No node has <code>disktype=nvme</code>, so the Pod remains Pending.</div></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Taints and tolerations</p>
+    <h1>A toleration allows a tainted node</h1>
+    <p class="subhead">The toleration removes one restriction. It does not force the Pod onto that node.</p>
+    <div class="body compare">
+      <div class="panel rose"><span class="label">Node policy</span><h2>Taint on the node</h2><div class="code-card" style="margin-top:17px"><pre>dedicated=gpu:NoSchedule</pre></div><ul class="bullets compact" style="margin-top:24px"><li><code>NoSchedule</code> blocks new Pods.</li><li>The scheduler still checks resources and labels.</li></ul></div>
+      <div class="panel green"><span class="label">Pod permission</span><h2>Matching toleration</h2><div class="code-card" style="margin-top:17px"><pre>tolerations:
+- key: dedicated
+  operator: Equal
+  value: gpu
+  effect: NoSchedule</pre></div><p style="margin-top:20px">Use a selector or affinity as well when the Pod must run on the dedicated pool.</p></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Score stage</p>
+    <h1>Scoring ranks the nodes that remain</h1>
+    <p class="subhead">Scoring cannot bring back a node that failed a hard placement rule.</p>
+    <div class="body grid-5-7">
+      <div>
+        <ul class="bullets">
+          <li>Resource balance can affect the score.</li>
+          <li>Topology spread can prefer a different zone.</li>
+          <li>Image locality may add points.</li>
+          <li>The highest total score becomes the selected node.</li>
+        </ul>
+      </div>
+      <div class="rank-list">
+        <div class="rank green"><div class="place">1</div><div><h3>worker-zone-b</h3><p>Good spread and enough free capacity</p></div><div class="score">87</div></div>
+        <div class="rank blue"><div class="place">2</div><div><h3>worker-zone-a</h3><p>Valid, but less balanced</p></div><div class="score">72</div></div>
+        <div class="rank"><div class="place">3</div><div><h3>worker-zone-c</h3><p>Valid, but lower topology score</p></div><div class="score">60</div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide divider"><div class="band"><div class="lesson-no">03</div><div><p class="eyebrow">Lesson 3</p><h1>How to diagnose a Pending Pod</h1><div class="outcome"><b>By the end:</b> you can read <code>FailedScheduling</code> and choose the next check without guessing.</div></div></div></section>
+
+  <section class="slide">
+    <p class="eyebrow">First evidence</p>
+    <h1>Start with the FailedScheduling event</h1>
+    <p class="subhead">Read the scheduler's reason before changing the workload or the cluster.</p>
+    <div class="terminal" style="width:1320px;margin:34px auto 0"><pre><span class="dim">$ kubectl describe pod too-big -n m4-lab</span>
+
+Events:
+  Type     Reason            From
+  Warning  FailedScheduling  default-scheduler
+
+  <span class="focus">0/5 nodes are available:</span>
+  <span class="bad">4 Insufficient cpu, 1 node had untolerated taint.</span>
+  preemption: 5 Preemption is not helpful for scheduling.</pre></div>
+    <div class="flow" style="margin-top:30px">
+      <div class="step blue"><h3>1. Find the reason</h3><p>Read each rejected-node count.</p></div>
+      <div class="step yellow"><h3>2. Check that rule</h3><p>Inspect requests, labels or taints.</p></div>
+      <div class="step green"><h3>3. Make one change</h3><p>Fix the exact rule that failed.</p></div>
+      <div class="step"><h3>4. Verify again</h3><p>Watch the event and Pod phase.</p></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Pending cause 1</p>
+    <h1>The resource request is too large</h1>
+    <div class="body grid-7-5">
+      <div class="terminal"><pre><span class="bad">4 Insufficient cpu</span>
+
+$ kubectl get pod too-big -n m4-lab \
+  -o jsonpath='{.spec.containers[*].resources.requests}'
+
+{"cpu":"9000"}
+
+$ kubectl describe node kwok-node-0 | grep -A5 Allocatable
+Allocatable:
+  cpu: 32</pre></div>
+      <div>
+        <span class="label">What to explain</span>
+        <ul class="bullets compact">
+          <li>The Pod asks for more CPU than any candidate node can provide.</li>
+          <li>Preemption cannot help if the request is larger than node capacity.</li>
+          <li>Reduce the request or add a larger node type.</li>
+          <li>Recreate the Pod because requests are immutable for an existing Pod.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Pending cause 2</p>
+    <h1>The node selector matches nothing</h1>
+    <div class="body grid-7-5">
+      <div class="terminal"><pre><span class="bad">4 node(s) didn't match Pod's node affinity/selector</span>
+
+$ kubectl get pod wrong-selector -n m4-lab \
+  -o jsonpath='{.spec.nodeSelector}'
+{"disktype":"nvme-that-does-not-exist"}
+
+$ kubectl get nodes -L disktype
+NAME          DISKTYPE
+worker-0      &lt;none&gt;
+kwok-node-1   &lt;none&gt;</pre></div>
+      <div>
+        <span class="label">What to explain</span>
+        <ul class="bullets compact">
+          <li>Compare the Pod selector with live node labels.</li>
+          <li>Check spelling, case and expected node pool.</li>
+          <li>Fix the selector or label the intended node.</li>
+          <li>Do not add a label to an unsuitable node only to make the Pod run.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Pending cause 3</p>
+    <h1>The Pod cannot tolerate a taint</h1>
+    <div class="body grid-7-5">
+      <div class="terminal"><pre><span class="bad">4 node(s) had untolerated taint</span>
+
+$ kubectl get node kwok-node-0 \
+  -o jsonpath='{.spec.taints}'
+
+[{"key":"kwok.x-k8s.io/node",
+  "value":"fake",
+  "effect":"NoSchedule"}]
+
+$ kubectl get pod no-toleration -n m4-lab \
+  -o jsonpath='{.spec.tolerations}'
+[]</pre></div>
+      <div>
+        <span class="label">What to explain</span>
+        <ul class="bullets compact">
+          <li>Read the taint key, value and effect.</li>
+          <li>Compare them with the Pod tolerations.</li>
+          <li>Add a narrow toleration only if the Pod belongs on that node pool.</li>
+          <li>Use placement rules as well when the Pod must use that pool.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Diagnostic workflow</p>
+    <h1>Use the event to choose the next check</h1>
+    <p class="subhead">Each scheduler reason points to a different part of the Pod and node contract.</p>
+    <table class="table" style="margin-top:34px">
+      <thead><tr><th>FailedScheduling reason</th><th>Check next</th><th>Safe fix to consider</th></tr></thead>
+      <tbody>
+        <tr><td class="reason"><code>Insufficient cpu</code></td><td>Pod requests, node allocatable, existing requests</td><td>Right-size the request or add a node with enough capacity</td></tr>
+        <tr><td class="reason"><code>didn't match selector</code></td><td>Pod selector, required affinity and live node labels</td><td>Correct the rule or label the correct node pool</td></tr>
+        <tr><td class="reason"><code>untolerated taint</code></td><td>Node taints and the Pod's effective tolerations</td><td>Add a narrow toleration only when policy allows it</td></tr>
+        <tr><td class="reason"><code>preemption is not helpful</code></td><td>Hard constraints that removing another Pod cannot solve</td><td>Fix the impossible constraint before changing priority</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="slide divider"><div class="band"><div class="lesson-no">04</div><div><p class="eyebrow">Lesson 4</p><h1>How controllers process changes</h1><div class="outcome"><b>By the end:</b> you can explain how a controller receives work, retries safely and selects one active replica.</div></div></div></section>
+
+  <section class="slide">
+    <p class="eyebrow">Controller internals</p>
+    <h1>A controller watches, queues and reconciles</h1>
+    <p class="subhead">The same mechanism is used by built-in controllers and many operators.</p>
+    <div class="body">
+      <div class="flow" style="margin-top:45px">
+        <div class="step blue"><h3>Informer</h3><p>Watches the API and keeps a local cache.</p></div>
+        <div class="step yellow"><h3>Work queue</h3><p>Stores object keys, removes duplicates and rate limits retries.</p></div>
+        <div class="step lavender"><h3>Reconcile</h3><p>Reads current state, compares it with desired state and acts.</p></div>
+        <div class="step green"><h3>Done or requeue</h3><p>Success ends this item. Error returns it with backoff.</p></div>
+      </div>
+      <div class="compare" style="margin-top:42px">
+        <div class="panel"><h2>Why use a local cache?</h2><p>Controllers can read repeated state without sending every read to etcd.</p></div>
+        <div class="panel"><h2>Why use backoff?</h2><p>One broken object will not create a tight loop against the API server.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Leader election</p>
+    <h1>Leader election lets one copy act</h1>
+    <p class="subhead">Several controller replicas can run, but only the Lease holder performs reconciliation.</p>
+    <div class="body grid-5-7">
+      <div>
+        <ul class="bullets compact">
+          <li>Every replica competes for the same Lease.</li>
+          <li>One replica renews the leader election Lease.</li>
+          <li>The leader processes work from the queue.</li>
+          <li>A standby takes over when Lease renewal stops.</li>
+        </ul>
+        <div class="callout" style="margin-top:28px"><strong>Reason</strong>Without leader election, several controller copies could act on the same object at the same time.</div>
+      </div>
+      <div class="diagram" style="flex-direction:column">
+        <div class="row" style="display:flex;gap:20px"><div class="node green"><b>controller-0</b><span>Lease holder<br>active</span></div><div class="node"><b>controller-1</b><span>standby</span></div><div class="node"><b>controller-2</b><span>standby</span></div></div>
+        <div class="arrow">↓</div>
+        <div class="node lavender"><b>Lease</b><span>kube-system/controller-manager</span></div>
+        <div class="arrow">↓</div>
+        <div class="node blue"><b>reconcile work</b><span>only the active replica acts</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="slide divider"><div class="band"><div class="lesson-no">05</div><div><p class="eyebrow">Lesson 5</p><h1>What happens when a node stops reporting</h1><div class="outcome"><b>By the end:</b> you can explain the path from a lost Node Lease to Pod eviction and replacement.</div></div></div></section>
+
+  <section class="slide">
+    <p class="eyebrow">Node health</p>
+    <h1>A lost Lease changes node health</h1>
+    <p class="subhead">The control plane separates node detection from Pod eviction.</p>
+    <div class="timeline">
+      <div class="moment"><div class="dot"></div><h3>Lease renewal stops</h3><p>The kubelet no longer updates its Node Lease.</p></div>
+      <div class="moment"><div class="dot"></div><h3>Ready becomes Unknown</h3><p>The node controller marks the node as unreachable.</p></div>
+      <div class="moment"><div class="dot"></div><h3>System taints appear</h3><p><code>unreachable</code> or <code>not-ready</code> is added.</p></div>
+      <div class="moment"><div class="dot"></div><h3>Pod timers continue</h3><p>Existing Pods remain until their toleration expires.</p></div>
+    </div>
+    <div class="callout" style="margin:62px auto 0;max-width:1180px"><strong>What to point out</strong>The scheduler avoids the unhealthy node immediately, while existing Pods may remain bound for a grace period.</div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Taint effects</p>
+    <h1>NoSchedule and NoExecute do different jobs</h1>
+    <p class="subhead">One effect controls new placement. The other can remove Pods already on the node.</p>
+    <table class="table" style="margin-top:48px;font-size:24px">
+      <thead><tr><th>Effect</th><th>New Pods</th><th>Existing Pods</th><th>Common use</th></tr></thead>
+      <tbody>
+        <tr><td><code>NoSchedule</code></td><td>Blocked unless tolerated</td><td>Remain on the node</td><td>Dedicated pools, control-plane protection</td></tr>
+        <tr><td><code>PreferNoSchedule</code></td><td>Avoided when possible</td><td>Remain on the node</td><td>Soft isolation preference</td></tr>
+        <tr><td><code>NoExecute</code></td><td>Blocked unless tolerated</td><td>Evicted when not tolerated or when the timer expires</td><td>Node failure and maintenance tests</td></tr>
+      </tbody>
+    </table>
+    <div class="callout" style="margin-top:30px"><strong>Lab link</strong>The lab adds a custom <code>maintenance=cordon:NoExecute</code> taint so you can observe the eviction path safely on a KWOK node.</div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Eviction grace period</p>
+    <h1>tolerationSeconds controls the eviction delay</h1>
+    <p class="subhead">The default not-ready and unreachable tolerations are commonly 300 seconds.</p>
+    <div class="body compare" style="height:445px">
+      <div class="panel green"><span class="label">Node returns before 300 seconds</span><h2>The Pod remains bound</h2><ul class="bullets compact" style="margin-top:22px"><li>The Lease starts renewing again.</li><li>The system taint is removed.</li><li>The workload avoids an unnecessary restart.</li></ul></div>
+      <div class="panel rose"><span class="label">Timer expires first</span><h2>The Pod is marked for deletion</h2><ul class="bullets compact" style="margin-top:22px"><li>Taint Manager processes the <code>NoExecute</code> taint.</li><li>The old Pod is deleted from the failed node.</li><li>A workload controller may create a replacement Pod.</li></ul></div>
+    </div>
+    <div class="callout" style="margin-top:26px"><strong>Production decision</strong>A short timer reacts faster but can restart Pods during a brief network problem. A long timer delays recovery from a dead node.</div>
+  </section>
+
+  <section class="slide divider"><div class="band"><div class="lesson-no">06</div><div><p class="eyebrow">Lesson 6</p><h1>Prove the model in the lab</h1><div class="outcome"><b>By the end:</b> you will connect each event and state change to the scheduling and controller mechanism behind it.</div></div></div></section>
+
+  <section class="slide">
+    <p class="eyebrow">Lab part 1</p>
+    <h1>Create and repair three Pending Pods</h1>
+    <p class="subhead">Keep Cluster X-Ray open and compare the live reason with the command output.</p>
+    <table class="table" style="margin-top:34px">
+      <thead><tr><th>Pod</th><th>Failure you create</th><th>Evidence</th><th>Repair</th></tr></thead>
+      <tbody>
+        <tr><td><code>too-big</code></td><td>CPU request is <code>9000</code></td><td><code>Insufficient cpu</code></td><td>Recreate with <code>100m</code></td></tr>
+        <tr><td><code>wrong-selector</code></td><td>Label does not exist</td><td><code>didn't match selector</code></td><td>Add the expected label to a suitable KWOK node</td></tr>
+        <tr><td><code>no-toleration</code></td><td>Selects KWOK but lacks its toleration</td><td><code>untolerated taint</code></td><td>Recreate with the matching toleration</td></tr>
+      </tbody>
+    </table>
+    <div class="terminal" style="margin-top:30px"><pre>$ kubectl get pod too-big wrong-selector no-toleration -n m4-lab -o wide
+NAME             READY   STATUS    NODE
+too-big          1/1     Running   kwok-node-0
+wrong-selector   1/1     Running   kwok-node-1
+no-toleration    1/1     Running   kwok-node-2</pre></div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Lab part 2</p>
+    <h1>Use KWOK to observe eviction</h1>
+    <p class="subhead">KWOK creates fake Node objects, so you can change scheduling state without running extra machines.</p>
+    <div class="body grid-5-7">
+      <div>
+        <ul class="bullets compact">
+          <li>Create three fake nodes with <code>kwok-setup.sh</code>.</li>
+          <li>Schedule <code>on-fake</code> with the required selector and toleration.</li>
+          <li>Add <code>maintenance=cordon:NoExecute</code> to its node.</li>
+          <li>Read the <code>TaintManagerEviction</code> event.</li>
+        </ul>
+      </div>
+      <div class="terminal"><pre><span class="dim">$ node=$(kubectl get pod on-fake -n m4-lab \
+  -o jsonpath='{.spec.nodeName}')</span>
+
+$ kubectl taint node "$node" \
+  maintenance=cordon:NoExecute
+
+node/kwok-node-0 modified
+
+$ kubectl get events -n m4-lab \
+  --field-selector reason=TaintManagerEviction
+
+<span class="good">TaintManagerEviction  on-fake
+Marking for deletion Pod m4-lab/on-fake</span></pre></div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Production review</p>
+    <h1>Review policy before changing it</h1>
+    <p class="subhead">A Pending Pod may be correct. The scheduler is enforcing the rules your platform defined.</p>
+    <table class="table" style="margin-top:32px">
+      <thead><tr><th>Control</th><th>Review</th><th>Avoid</th></tr></thead>
+      <tbody>
+        <tr><td>Resource requests</td><td>Use measured usage with a justified buffer</td><td>Removing requests only to make a Pod schedule</td></tr>
+        <tr><td>Placement</td><td>Use hard rules only for real requirements</td><td>Several hard selectors that no node can satisfy</td></tr>
+        <tr><td>Isolation</td><td>Use narrow taints and tolerations for dedicated pools</td><td>A broad <code>Exists</code> toleration on every workload</td></tr>
+        <tr><td>Priority</td><td>Keep high priority limited and reviewed</td><td>Raising priority before understanding the failed constraint</td></tr>
+        <tr><td>Recovery timing</td><td>Set eviction delay from the workload recovery objective</td><td>Shortening the timer without checking replacement capacity</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="slide">
+    <p class="eyebrow">Module summary</p>
+    <h1>What you should be able to explain now</h1>
+    <div class="summary-list">
+      <div class="summary-row blue"><div class="n">1</div><p>A scheduling cycle filters nodes, scores valid candidates and binds the Pod to one node.</p></div>
+      <div class="summary-row yellow"><div class="n">2</div><p>Resource requests, selectors and taints can each keep a Pod in Pending for a different reason.</p></div>
+      <div class="summary-row rose"><div class="n">3</div><p><code>FailedScheduling</code> tells you which placement rule to inspect next.</p></div>
+      <div class="summary-row lavender"><div class="n">4</div><p>Controllers use an informer, a work queue, reconciliation, backoff and leader election.</p></div>
+      <div class="summary-row green"><div class="n">5</div><p>A lost Node Lease can lead to system taints, a toleration timer and Pod eviction.</p></div>
+    </div>
+    <div class="callout" style="margin-top:25px"><strong>Next step</strong>Run the Module 4 lab and match every event with the mechanism shown in this deck.</div>
+  </section>
+
+</main></div>
+<div class="nav-controls"><span class="counter"></span><button type="button" aria-label="Previous slide">‹</button><button type="button" aria-label="Next slide">›</button></div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];let index=0;
+  slides.forEach((slide,i)=>{const page=document.createElement('div');page.className='pageno';page.textContent=`M4·${String(i+1).padStart(2,'0')}`;slide.appendChild(page)});
+  function fit(){const scale=Math.min(innerWidth/1600,innerHeight/900);const x=(innerWidth-(1600*scale))/2;const y=(innerHeight-(900*scale))/2;document.getElementById('deck').style.transform=`translate(${x}px,${y}px) scale(${scale})`}
+  function fragments(){return[...slides[index].querySelectorAll('.fragment')]}
+  function show(n){index=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,i)=>s.classList.toggle('active',i===index));fragments().forEach(f=>f.classList.remove('visible'));document.querySelector('.counter').textContent=`${index+1}/${slides.length}`;history.replaceState(null,'',`#${index+1}`)}
+  function forward(){const next=fragments().find(f=>!f.classList.contains('visible'));if(next){next.classList.add('visible');return}show(index+1)}
+  function back(){const visible=fragments().filter(f=>f.classList.contains('visible'));if(visible.length){visible.at(-1).classList.remove('visible');return}show(index-1);fragments().forEach(f=>f.classList.add('visible'))}
+  document.querySelector('[aria-label="Previous slide"]').addEventListener('click',back);
+  document.querySelector('[aria-label="Next slide"]').addEventListener('click',forward);
+  addEventListener('resize',fit);addEventListener('hashchange',()=>show((parseInt(location.hash.slice(1),10)||1)-1));
+  addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' '].includes(e.key))forward();if(['ArrowLeft','PageUp'].includes(e.key))back();if(e.key==='Home')show(0);if(e.key==='End')show(slides.length-1);if(e.key.toLowerCase()==='a')fragments().forEach(f=>f.classList.add('visible'));if(e.key.toLowerCase()==='f')document.documentElement.requestFullscreen?.()});
+  fit();show((parseInt(location.hash.slice(1),10)||1)-1);
+</script>
+</body>
+</html>

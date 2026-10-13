@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Priority &amp; Fairness Playground</title>
+<style>
+  :root{
+    --bg:#0d1220; --panel:#151c2e; --panel2:#111827; --line:#26324e; --line2:#1c2740;
+    --txt:#dbe4f5; --dim:#8494b3; --faint:#5a6a8c;
+    --accent:#4cc9f0; --accent2:#7b6cf6;
+    --ok:#3ddc97; --warn:#f5b942; --bad:#ff6b6b;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sw:clamp(1.15rem,0.75rem + 0.65vw,1.95rem);  /* seat slot width, fluid */
+    --sh:clamp(1.5rem,0.95rem + 0.95vw,2.6rem);    /* seat slot height, fluid */
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  /* fluid type scale: ~12.3px @800w → 16px @≥1750w, floor 10.5px */
+  html{font-size:clamp(10.5px,0.4vw + 9.1px,16px)}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font:1rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{display:flex;flex-direction:column;height:100%;padding:8px 10px;gap:6px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+  header h1{font-size:1.05rem;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  header h1 .k8s{color:var(--accent)}
+  #hsub{margin-left:auto;font-family:var(--mono);font-size:.8rem;color:var(--faint);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  #reset{background:none;border:1px solid var(--line);color:var(--dim);border-radius:6px;
+    padding:3px 9px;font-size:.88rem;cursor:pointer;min-height:24px;flex:0 0 auto}
+  #reset:hover{color:var(--txt);border-color:var(--faint)}
+
+  /* ---------- challenge banner ---------- */
+  #challenge{flex:0 0 auto;display:flex;align-items:center;gap:10px;
+    background:linear-gradient(90deg,rgba(123,108,246,.14),rgba(76,201,240,.07));
+    border:1px solid #3a3f6e;border-radius:8px;padding:4px 11px;min-height:30px}
+  #challenge .tag{font-size:.8rem;font-weight:700;letter-spacing:.8px;color:var(--accent2);
+    text-transform:uppercase;white-space:nowrap}
+  #challenge .steps{display:flex;gap:5px}
+  #challenge .dot{width:1.3rem;height:1.3rem;border-radius:50%;border:1.5px solid var(--faint);
+    font-size:.76rem;display:flex;align-items:center;justify-content:center;color:var(--faint);font-weight:700}
+  #challenge .dot.cur{border-color:var(--accent);color:var(--accent)}
+  #challenge .dot.done{border-color:var(--ok);background:rgba(61,220,151,.15);color:var(--ok)}
+  #challenge .txt{flex:1;color:var(--txt);font-size:.94rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #challenge .txt code{font-family:var(--mono);font-size:.86rem;color:var(--accent);background:rgba(76,201,240,.08);
+    padding:0 4px;border-radius:4px}
+  #challenge.success{background:linear-gradient(90deg,rgba(61,220,151,.16),rgba(61,220,151,.05));border-color:#2c7a5b}
+  #challenge.success .tag{color:var(--ok)}
+  #challenge.success .txt{white-space:normal;line-height:1.3}
+
+  /* ---------- main grid ---------- */
+  #main{flex:1 1 auto;display:grid;grid-template-columns:clamp(238px,21rem,340px) 1fr;gap:6px;min-height:0}
+  #main>.panel{min-width:0}
+  .panel{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;min-height:0}
+  .panel h2{font-size:.76rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+
+  /* ---------- sources (left) ---------- */
+  #sources{display:flex;flex-direction:column;gap:5px;overflow:hidden}
+  .src{border:1px solid var(--line2);border-radius:8px;background:var(--panel2);padding:4px 8px}
+  .srow{display:flex;align-items:center;gap:7px}
+  .sdot{width:.6rem;height:.6rem;border-radius:50%;background:var(--c,#888);flex:0 0 auto}
+  .sdot.tx{animation:txp .45s ease-out}
+  @keyframes txp{0%{box-shadow:0 0 0 0 var(--c)}100%{box-shadow:0 0 0 .55rem rgba(0,0,0,0)}}
+  .snm{font-size:.9rem;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ssub{font-size:.74rem;color:var(--faint);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ssub code{font-family:var(--mono);color:var(--dim)}
+  .ssub code.hot{color:var(--accent)}
+  .tgl{min-width:3.2rem;border-radius:6px;border:1px solid var(--line);background:none;color:var(--faint);
+    font-size:.74rem;font-weight:700;letter-spacing:.5px;padding:2px 6px;cursor:pointer}
+  .tgl.on{color:var(--ok);border-color:rgba(61,220,151,.5);background:rgba(61,220,151,.08)}
+  .tgl:hover{border-color:var(--faint)}
+  .rateval{font-family:var(--mono);font-size:.86rem;font-weight:700;color:var(--accent)}
+  input[type=range]{width:100%;margin:3px 0 1px;accent-color:var(--accent);cursor:pointer;height:1rem}
+  .burst{width:100%;min-height:1.9rem;border-radius:7px;border:1px solid var(--line);background:none;
+    color:var(--txt);font-size:.88rem;font-weight:600;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;gap:6px;transition:border-color .2s,background .2s}
+  .burst:disabled{opacity:.45;cursor:default}
+  #stormBtn:hover:not(:disabled){border-color:var(--bad);background:rgba(255,107,107,.07)}
+  #rolloutBtn:hover:not(:disabled){border-color:var(--warn);background:rgba(245,185,66,.08)}
+  #fsBtn{min-height:2.4rem;border-radius:8px;border:1.5px dashed var(--accent2);background:rgba(123,108,246,.07);
+    color:#a89cf8;font-size:.88rem;font-weight:600;cursor:pointer;padding:3px 8px;line-height:1.25}
+  #fsBtn code{font-family:var(--mono)}
+  #fsBtn:hover{background:rgba(123,108,246,.14)}
+  #fsBtn.on{border-style:solid;border-color:rgba(61,220,151,.6);background:rgba(61,220,151,.08);color:var(--ok)}
+
+  /* ---------- api-server (right) ---------- */
+  #apiserver{display:flex;flex-direction:column;min-height:0}
+  #apiserver h2 span{text-transform:none;letter-spacing:0;color:var(--line)}
+  #schemas{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;overflow:hidden;flex:0 0 auto;
+    padding-bottom:5px;border-bottom:1px dashed var(--line2);margin-bottom:5px}
+  #schemas .slbl{font-size:.7rem;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+    color:var(--faint);white-space:nowrap;cursor:default}
+  .schema{font-family:var(--mono);font-size:.72rem;color:var(--dim);border:1px solid var(--line);
+    border-radius:6px;padding:1px 6px;white-space:nowrap;position:relative;cursor:help;
+    flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:980px){#schemas .slbl{display:none}}
+  .schema.hit{animation:schit .5s ease-out}
+  @keyframes schit{0%{border-color:var(--accent);color:var(--accent);background:rgba(76,201,240,.16);
+    box-shadow:0 0 8px rgba(76,201,240,.55)}100%{box-shadow:0 0 0 rgba(76,201,240,0)}}
+  .schema.absent{border-style:dashed;color:var(--faint);cursor:pointer}
+  .schema.absent:hover{border-color:var(--accent2);color:#a89cf8}
+  .schema.mine{cursor:pointer}
+  .schema.mine.present{border-color:rgba(61,220,151,.5);color:var(--ok)}
+  .schema:hover::after,.schema:active::after,[data-tip].tipb:hover::after,[data-tip].tipb:active::after{
+    content:attr(data-tip);position:absolute;left:0;top:calc(100% + 7px);z-index:40;width:30ch;
+    background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:6px 9px;color:var(--txt);
+    text-align:left;white-space:normal;pointer-events:none;
+    font:.82rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+  #lanes{flex:1;display:flex;flex-direction:column;gap:5px;min-height:0}
+  .lane{flex:1;border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+    padding:3px 8px;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:2px;
+    position:relative;transition:border-color .3s}
+  .lane.flash429{animation:l429 .7s ease-out}
+  @keyframes l429{0%{border-color:var(--bad);box-shadow:0 0 10px rgba(255,107,107,.55)}
+    100%{box-shadow:0 0 0 rgba(255,107,107,0)}}
+  .lrow1{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .lname{font-family:var(--mono);font-size:.86rem;font-weight:700;color:var(--txt);flex:0 0 auto;cursor:default}
+  .lstats{font-family:var(--mono);font-size:.74rem;color:var(--faint);overflow:hidden;text-overflow:ellipsis;cursor:default}
+  .lstats b{color:var(--dim);font-weight:600}
+  .lrej{margin-left:auto;font-family:var(--mono);font-size:.76rem;color:var(--faint);cursor:default}
+  .lrej.has{color:var(--bad);font-weight:700}
+  .stepper{display:flex;align-items:center;gap:1px;background:var(--bg);border:1px solid var(--line);
+    border-radius:7px;padding:0}
+  .stepper button{width:1.7rem;height:1.45rem;background:none;border:none;color:var(--accent);
+    font-size:1.05rem;cursor:pointer;border-radius:5px;line-height:1}
+  .stepper button:hover{background:rgba(76,201,240,.1)}
+  .stepper button:disabled{color:var(--line);cursor:default;background:none}
+  .stepper .num{font-family:var(--mono);font-size:.86rem;font-weight:700;width:1.2rem;text-align:center}
+  .lrow2{display:flex;align-items:center;gap:8px;min-height:calc(var(--sh) + .1rem)}
+  .seats{display:flex;align-items:center;gap:3px;flex:0 0 auto}
+  .seat{height:var(--sh);border-radius:4px;position:relative}
+  .seat.free{width:var(--sw);border:1px dashed var(--line);cursor:default}
+  .seat.exec{border:1px solid var(--c);background:color-mix(in srgb,var(--c) 16%,#0e1526);
+    display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+    font-size:clamp(.62rem,.45rem + .25vw,.82rem);
+    font-weight:700;color:var(--c);overflow:hidden;animation:pop .3s cubic-bezier(.2,1.6,.4,1);cursor:default}
+  @keyframes pop{0%{transform:scale(.5);opacity:0}100%{transform:scale(1);opacity:1}}
+  .seat.exec .f{position:absolute;left:0;bottom:0;height:2px;width:100%;background:var(--c);opacity:.9}
+  .qwrap{flex:1;display:flex;align-items:center;gap:4px;min-width:0;border-left:1px dashed var(--line2);
+    padding-left:8px;overflow:hidden;cursor:default}
+  .qlbl{font-size:.64rem;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);flex:0 0 auto}
+  .qc{height:calc(var(--sh)*.62);width:calc(var(--sw)*.55);border-radius:3px;
+    background:color-mix(in srgb,var(--c) 45%,#1a2338);
+    border:1px solid var(--c);flex:0 0 auto;animation:pop .25s ease-out;cursor:default}
+  .qc.wide{width:calc(var(--sw)*1.4);display:flex;align-items:center;justify-content:center;
+    font:700 clamp(.58rem,.42rem + .22vw,.74rem) var(--mono);color:var(--c)}
+
+  /* ---------- metrics strip ---------- */
+  #metrics{flex:0 0 auto;display:flex;gap:6px;align-items:stretch}
+  .met{flex:1;background:var(--panel);border:1px solid var(--line2);border-radius:9px;padding:4px 10px;
+    display:flex;align-items:center;gap:9px;min-width:0;position:relative;cursor:help}
+  .met .mv{font-family:var(--mono);font-size:1.3rem;font-weight:700;color:var(--accent);flex:0 0 auto;min-width:2ch;text-align:right}
+  .met.rej .mv{color:var(--bad)}
+  .met .mn{min-width:0;overflow:hidden}
+  .met .mname{font-family:var(--mono);font-size:.7rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .met .mname i{font-style:normal;color:var(--faint)}
+  .met .msub{font-family:var(--mono);font-size:.66rem;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #note{flex:0 0 auto;display:flex;align-items:center;padding:0 8px;color:var(--faint);font-size:1rem;
+    position:relative;cursor:help;border:1px solid var(--line2);border-radius:9px;background:var(--panel)}
+  #note:hover{color:var(--dim)}
+  #note:hover::after,#note:active::after{content:attr(data-tip);position:absolute;right:0;bottom:calc(100% + 7px);
+    z-index:40;width:38ch;background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:7px 10px;
+    color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.82rem/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+  .met:hover::after,.met:active::after{content:attr(data-tip);position:absolute;left:0;bottom:calc(100% + 7px);
+    z-index:40;width:32ch;background:#0a0f1c;border:1px solid var(--line);border-radius:7px;padding:6px 9px;
+    color:var(--txt);text-align:left;white-space:normal;pointer-events:none;
+    font:.8rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    box-shadow:0 4px 16px rgba(0,0,0,.55)}
+
+  /* ---------- event log — read-only stream, deliberately non-interactive ---------- */
+  #events{flex:0 0 clamp(92px,8.2rem,140px);display:flex;flex-direction:column;min-height:0}
+  #events,#events *{cursor:default}
+  #evList{flex:1;overflow-y:auto;font-family:var(--mono);font-size:.78rem;line-height:1.65;scrollbar-width:thin}
+  .ev{display:flex;gap:8px;white-space:nowrap;overflow:hidden}
+  .ev .et{color:var(--faint);flex:0 0 2.6rem}
+  .ev .er{flex:0 0 9.4rem;overflow:hidden;text-overflow:ellipsis;color:var(--ok)}
+  .ev.warn .er{color:var(--bad)}
+  .ev.info .er{color:var(--accent2)}
+  .ev .eo{flex:0 0 13rem;color:var(--dim);overflow:hidden;text-overflow:ellipsis}
+  .ev .em{flex:1;color:var(--txt);opacity:.85;overflow:hidden;text-overflow:ellipsis}
+  .ev.new{animation:evin .4s ease-out}
+  @keyframes evin{0%{background:rgba(76,201,240,.12)}100%{background:transparent}}
+
+  /* narrow fallback: stack + allow scroll rather than clip */
+  @media (max-width:620px){
+    body{overflow:auto}
+    #main{grid-template-columns:1fr}
+    #app{height:auto;min-height:100%}
+    .lane{min-height:4.6rem}
+    .ev .eo{flex-basis:9rem}.ev .er{flex-basis:8rem}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none !important;transition:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <h1><span class="k8s">⎈</span> API Priority &amp; Fairness Playground</h1>
+    <span id="hsub">FlowSchema classifies → priority level admits, queues, or rejects</span>
+    <button id="reset" title="Reset the simulator">↺ Reset</button>
+  </header>
+
+  <div id="challenge">
+    <span class="tag">Try this</span>
+    <span class="steps">
+      <span class="dot" id="d1">1</span><span class="dot" id="d2">2</span><span class="dot" id="d3">3</span>
+    </span>
+    <span class="txt" id="chTxt"></span>
+  </div>
+
+  <div id="main">
+    <div class="panel" id="sources">
+      <h2>Request sources</h2>
+
+      <div class="src" style="--c:var(--ok)">
+        <div class="srow"><span class="sdot" id="dotKubelet"></span><span class="snm">kubelet heartbeats</span>
+          <button class="tgl on" id="kubeletTgl" title="Toggle kubelet heartbeat traffic">ON</button></div>
+        <div class="ssub">GET · 1 seat · 2/s → <code>system-nodes</code></div>
+      </div>
+
+      <div class="src" style="--c:var(--accent2)">
+        <div class="srow"><span class="sdot" id="dotTenants"></span><span class="snm">other tenants' apps</span>
+          <button class="tgl on" id="tenantsTgl" title="Toggle in-cluster tenant traffic">ON</button></div>
+        <div class="ssub">GET · 1 seat · 1.5/s → <code>service-accounts</code></div>
+      </div>
+
+      <div class="src" style="--c:var(--accent)">
+        <div class="srow"><span class="sdot" id="dotCtrl"></span><span class="snm">your controller</span>
+          <span class="rateval" id="rateVal">3/s</span></div>
+        <input type="range" id="rate" min="0" max="8" step="1" value="3"
+          title="Requests per second from your controller" aria-label="controller request rate">
+        <div class="ssub">PUT · 1 seat · every 12th = relist LIST · 3 seats · → <code id="ctrlSch">global-default</code></div>
+      </div>
+
+      <div class="src" style="--c:var(--bad)">
+        <button class="burst" id="stormBtn"><span>⚡</span> Fire LIST storm</button>
+        <div class="ssub">rogue operator · 10 × LIST · 3 seats each · → <code>global-default</code></div>
+      </div>
+
+      <div class="src" style="--c:var(--warn)">
+        <button class="burst" id="rolloutBtn"><span>▲</span> Critical rollout</button>
+        <div class="ssub">deployment controller · 16 × PUT burst → <code>kube-system-SAs</code></div>
+      </div>
+
+      <button id="fsBtn" title="Create a FlowSchema that classifies your controller's traffic into workload-high — the same fix you'll apply for real in the lab">
+        ＋ Create FlowSchema <code>your-controller</code> → workload-high</button>
+    </div>
+
+    <div class="panel" id="apiserver">
+      <h2>kube-apiserver <span>· flow control (APF)</span></h2>
+      <div id="schemas">
+        <span class="slbl">FlowSchemas</span>
+        <span class="schema" id="schSystemNodes"
+          data-tip="FlowSchema system-nodes — matches requests from kubelets (group system:nodes). Priority level: system. Node heartbeats must never starve.">system-nodes</span>
+        <span class="schema" id="schKubeSA"
+          data-tip="FlowSchema kube-system-service-accounts — matches controllers in kube-system (the deployment rollout). Priority level: workload-high.">kube-system-SAs</span>
+        <span class="schema mine absent" id="schMine"
+          data-tip="FlowSchema your-controller — not created yet. Click to create it: matches your controller's ServiceAccount and routes it to workload-high, out of the shared catch-all.">your-controller</span>
+        <span class="schema" id="schSA"
+          data-tip="FlowSchema service-accounts — matches other in-cluster workloads using ServiceAccounts. Priority level: workload-low.">service-accounts</span>
+        <span class="schema" id="schGD"
+          data-tip="FlowSchema global-default — the catch-all for anything no earlier schema matched: the rogue operator's kubectl, and your controller until you create a schema for it. Priority level: global-default (few seats!).">global-default</span>
+      </div>
+      <div id="lanes"></div>
+    </div>
+  </div>
+
+  <div id="metrics">
+    <div class="met" id="metExec"
+      data-tip="apiserver_flowcontrol_current_executing_seats — seats occupied right now, per priority level. The exact metric you'll scrape from /metrics in the lab.">
+      <span class="mv" id="mExec">0</span>
+      <span class="mn"><span class="mname"><i>apiserver_flowcontrol_</i>current_executing_seats</span>
+        <span class="msub" id="mExecSub"></span></span>
+    </div>
+    <div class="met" id="metQ"
+      data-tip="apiserver_flowcontrol_current_inqueue_requests — requests waiting in a priority level's queues. Non-zero here means latency; sustained growth means trouble.">
+      <span class="mv" id="mQ">0</span>
+      <span class="mn"><span class="mname"><i>apiserver_flowcontrol_</i>current_inqueue_requests</span>
+        <span class="msub" id="mQSub"></span></span>
+    </div>
+    <div class="met rej" id="metRej"
+      data-tip="apiserver_flowcontrol_rejected_requests_total — requests answered 429 Too Many Requests because the level's queues were full. Counter only ever goes up.">
+      <span class="mv" id="mRej">0</span>
+      <span class="mn"><span class="mname"><i>apiserver_flowcontrol_</i>rejected_requests_total</span>
+        <span class="msub" id="mRejSub"></span></span>
+    </div>
+    <span id="note"
+      data-tip="Honest-model note: real APF shuffle-shards each flow across several queues per priority level and dispatches by fair virtual finish time — here every level has one FIFO queue. Seat counts are shrunk for readability (real levels get shares of a server-wide concurrency budget), and service times / seat widths are fixed per verb instead of estimated per request.">ⓘ</span>
+  </div>
+
+  <div class="panel" id="events">
+    <h2>Events <span style="letter-spacing:0;text-transform:none;color:var(--line)">— what the API server would tell you</span></h2>
+    <div id="evList"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var $=function(id){return document.getElementById(id)};
+
+  /* ------------------------------------------------------------------ model */
+  var SRC={
+    kubelet:{color:'var(--ok)',      label:'kubelet',          user:'system:node/node-1'},
+    tenants:{color:'var(--accent2)', label:'tenant app',       user:'sa/default/webshop'},
+    ctrl:   {color:'var(--accent)',  label:'your controller',  user:'sa/platform/nimbus-operator'},
+    rogue:  {color:'var(--bad)',     label:'rogue operator',   user:'user/pat'},
+    rollout:{color:'var(--warn)',    label:'deploy controller',user:'sa/kube-system/deployment-controller'}
+  };
+  var LANE_ORDER=['system','wh','wl','gd'];
+  var LANES={
+    system:{key:'system',name:'system',        cap:5,q:[],ex:[],rej:0,qlim:8},
+    wh:    {key:'wh',    name:'workload-high', cap:6,q:[],ex:[],rej:0,qlim:8},
+    wl:    {key:'wl',    name:'workload-low',  cap:4,q:[],ex:[],rej:0,qlim:8},
+    gd:    {key:'gd',    name:'global-default',cap:3,q:[],ex:[],rej:0,qlim:8}
+  };
+  var S={fsOn:false, rate:3, kubeletOn:true, tenantsOn:true,
+         seq:0, ctrlSeq:0, t0:Date.now(), pending:[], acc:{kubelet:0,tenants:0,ctrl:0}};
+  var rejBySrc={kubelet:0,tenants:0,ctrl:0,rogue:0,rollout:0};
+  var CH={step:1, done:[false,false,false], s2stormAt:0, s2ok:0};
+
+  function schemaFor(src){
+    if(src==='kubelet')return {id:'schSystemNodes',name:'system-nodes',lane:'system'};
+    if(src==='rollout')return {id:'schKubeSA',name:'kube-system-service-accounts',lane:'wh'};
+    if(src==='ctrl'&&S.fsOn)return {id:'schMine',name:'your-controller',lane:'wh'};
+    if(src==='tenants')return {id:'schSA',name:'service-accounts',lane:'wl'};
+    return {id:'schGD',name:'global-default',lane:'gd'};
+  }
+  function mkReq(src){
+    S.seq++;
+    var verb='GET',width=1,ms=750;
+    if(src==='ctrl'){S.ctrlSeq++;
+      if(S.ctrlSeq%12===0){verb='LIST';width=3;ms=2200}else{verb='PUT';width=1;ms=700}}
+    else if(src==='rogue'){verb='LIST';width=3;ms=2400}
+    else if(src==='rollout'){verb='PUT';width=1;ms=600}
+    else if(src==='tenants'){ms=800}
+    else if(src==='kubelet'){ms=700}
+    var sch=schemaFor(src);
+    return {id:'r'+S.seq,src:src,verb:verb,width:width,ms:ms,lane:sch.lane,schema:sch};
+  }
+  function usedSeats(L){var u=0;L.ex.forEach(function(r){u+=r.width});return u}
+  function stormActive(){
+    return LANES.gd.ex.some(function(r){return r.src==='rogue'})||
+           LANES.gd.q.some(function(r){return r.src==='rogue'});
+  }
+
+  /* ------------------------------------------------------------------ events log */
+  var evList=$('evList');
+  function clock(){var s=Math.floor((Date.now()-S.t0)/1000);return Math.floor(s/60)+':'+('0'+s%60).slice(-2)}
+  function logEv(kind,reason,obj,msg){
+    var d=document.createElement('div');
+    d.className='ev new '+(kind==='Warning'?'warn':kind==='Info'?'info':'');
+    d.innerHTML='<span class="et">'+clock()+'</span><span class="er">'+reason+
+      '</span><span class="eo">'+obj+'</span><span class="em"></span>';
+    d.lastChild.textContent=msg; d.title=reason+'  '+obj+'  —  '+msg;
+    evList.appendChild(d);
+    while(evList.children.length>90)evList.removeChild(evList.firstChild);
+    evList.scrollTop=evList.scrollHeight;
+  }
+  /* rejection aggregation: one line per (lane,src) burst, not one per request */
+  var rejBuf={};
+  function logReject(L,req){
+    var k=L.key+'/'+req.src, b=rejBuf[k];
+    if(!b){b=rejBuf[k]={n:0,t:0};}
+    b.n++;
+    if(!b.t){ /* fixed window from first rejection — lines keep flowing under sustained storms */
+      b.t=setTimeout(function(){
+        logEv('Warning','Rejected429','prioritylevel/'+L.name,
+          SRC[req.src].label+' ×'+b.n+' — queue full ('+L.qlim+'/'+L.qlim+'), 429 Too Many Requests');
+        b.n=0;b.t=0;
+      },650);
+    }
+  }
+  var qNoteAt={};
+  function logQueued(L,req){
+    var now=Date.now();
+    if(L.q.length===1&&now-(qNoteAt[L.key]||0)>2500){
+      qNoteAt[L.key]=now;
+      logEv('Normal','Queued','prioritylevel/'+L.name,
+        SRC[req.src].label+' '+req.verb+' waiting — all '+L.cap+' seats busy');
+    }
+  }
+  var freeNoteAt=0;
+  function logFreed(L,req){
+    var now=Date.now();
+    if(req.width>1&&now-freeNoteAt>2200){
+      freeNoteAt=now;
+      logEv('Normal','SeatsFreed','prioritylevel/'+L.name,
+        'LIST done — '+req.width+' seats released, queue drains');
+    }
+  }
+
+  /* ------------------------------------------------------------------ lane DOM */
+  var laneEls={}, seatEls={}, qEls={};
+  (function buildLanes(){
+    var box=$('lanes');
+    LANE_ORDER.forEach(function(k){
+      var L=LANES[k];
+      var d=document.createElement('div');
+      d.className='lane'; d.id='lane-'+k;
+      d.innerHTML=
+        '<div class="lrow1"><span class="lname">'+L.name+'</span>'+
+        '<span class="stepper"><button class="sm" aria-label="fewer seats" title="Remove a seat (min 3)">−</button>'+
+        '<span class="num">'+L.cap+'</span>'+
+        '<button class="sp" aria-label="more seats" title="Add a seat (max 10)">+</button></span>'+
+        '<span class="lstats"></span>'+
+        '<span class="lrej">429 × <b>0</b></span></div>'+
+        '<div class="lrow2"><div class="seats"></div>'+
+        '<div class="qwrap"><span class="qlbl">queue</span></div></div>';
+      box.appendChild(d);
+      d.querySelector('.sm').addEventListener('click',function(){setCap(L,L.cap-1)});
+      d.querySelector('.sp').addEventListener('click',function(){setCap(L,L.cap+1)});
+      laneEls[k]={root:d,stats:d.querySelector('.lstats'),num:d.querySelector('.num'),
+        minus:d.querySelector('.sm'),plus:d.querySelector('.sp'),
+        rej:d.querySelector('.lrej'),rejN:d.querySelector('.lrej b'),
+        seats:d.querySelector('.seats'),q:d.querySelector('.qwrap')};
+    });
+  })();
+  function setCap(L,n){
+    n=Math.max(3,Math.min(10,n));
+    if(n===L.cap)return;
+    L.cap=n;
+    logEv('Info','ConcurrencyChanged','prioritylevel/'+L.name,'assured seats now '+n);
+    render();
+  }
+  function flash429(L){
+    var el=laneEls[L.key].root;
+    el.classList.remove('flash429');void el.offsetWidth;el.classList.add('flash429');
+  }
+  var schAt={};
+  function flashSchema(sch){
+    var now=Date.now();
+    if(now-(schAt[sch.id]||0)<160)return; /* throttle restarts at high rates */
+    schAt[sch.id]=now;
+    var el=$(sch.id);
+    el.classList.remove('hit');void el.offsetWidth;el.classList.add('hit');
+  }
+  var dotAt={};
+  function pulseDot(src){
+    var id=src==='kubelet'?'dotKubelet':src==='tenants'?'dotTenants':src==='ctrl'?'dotCtrl':null;
+    if(!id)return;
+    var now=Date.now();
+    if(now-(dotAt[id]||0)<180)return;
+    dotAt[id]=now;
+    var el=$(id);
+    el.classList.remove('tx');void el.offsetWidth;el.classList.add('tx');
+  }
+
+  /* ------------------------------------------------------------------ request lifecycle */
+  function spawn(src){
+    var req=mkReq(src);
+    flashSchema(req.schema);
+    pulseDot(src);
+    admit(req);
+  }
+  function admit(req){
+    var L=LANES[req.lane];
+    /* no bypass: if anyone is queued, newcomers go behind them (FIFO) */
+    if(L.q.length===0&&usedSeats(L)+req.width<=L.cap){exec(L,req)}
+    else if(L.q.length<L.qlim){L.q.push(req);addQChip(L,req);logQueued(L,req)}
+    else reject(L,req);
+  }
+  function exec(L,req){
+    req.endAt=Date.now()+req.ms;
+    L.ex.push(req);
+    var el=document.createElement('div');
+    el.className='seat exec'+(req.width>1?' w'+req.width:'');
+    el.style.setProperty('--c',SRC[req.src].color);
+    el.style.width='calc(var(--sw)*'+req.width+' + '+(3*(req.width-1))+'px)';
+    el.textContent=req.verb;
+    el.title=req.verb+' · '+req.width+' seat'+(req.width>1?'s':'')+' · '+SRC[req.src].label;
+    var f=document.createElement('span');f.className='f';el.appendChild(f);
+    var free=laneEls[L.key].seats.querySelector('.seat.free');
+    laneEls[L.key].seats.insertBefore(el,free);
+    seatEls[req.id]=el;
+    requestAnimationFrame(function(){requestAnimationFrame(function(){
+      f.style.transition='width '+req.ms+'ms linear'; f.style.width='0%';
+    })});
+  }
+  function addQChip(L,req){
+    var el=document.createElement('span');
+    el.className='qc'+(req.width>1?' wide':'');
+    el.style.setProperty('--c',SRC[req.src].color);
+    if(req.width>1)el.textContent='L×3';
+    el.title=req.verb+' · '+req.width+' seat'+(req.width>1?'s':'')+' · '+SRC[req.src].label+' — waiting';
+    laneEls[L.key].q.appendChild(el);
+    qEls[req.id]=el;
+  }
+  function rmEl(map,id){var el=map[id];if(el){if(el.parentNode)el.parentNode.removeChild(el);delete map[id]}}
+  function reject(L,req){
+    L.rej++; rejBySrc[req.src]++;
+    flash429(L); logReject(L,req);
+    /* challenge hooks */
+    if(CH.step===1&&req.src==='ctrl'&&stormActive()){CH.done[0]=true;CH.step=2;
+      logEv('Info','ChallengeStep','try-this/step-1','Your controller got 429s behind the storm. Now protect it.');}
+    if(CH.step===2&&req.src==='ctrl'){CH.s2stormAt=0;CH.s2ok=0;} /* protection failed — redo */
+  }
+  function finish(L,req){
+    rmEl(seatEls,req.id);
+    logFreed(L,req);
+    if(CH.step===2&&req.src==='ctrl'&&req.lane==='wh'&&CH.s2stormAt&&stormActive()){
+      CH.s2ok++;
+      if(CH.s2ok>=5){CH.done[1]=true;CH.step=3;
+        logEv('Info','ChallengeStep','try-this/step-2','Storm raged in global-default; your controller never queued behind it.');}
+    }
+  }
+
+  /* ------------------------------------------------------------------ engine */
+  function tick(){
+    var now=Date.now();
+    /* steady sources */
+    S.acc.kubelet+=(S.kubeletOn?2:0)*0.1;
+    S.acc.tenants+=(S.tenantsOn?1.5:0)*0.1;
+    S.acc.ctrl+=S.rate*0.1;
+    ['kubelet','tenants','ctrl'].forEach(function(k){
+      while(S.acc[k]>=1){S.acc[k]-=1;spawn(k==='ctrl'?'ctrl':k)}
+    });
+    /* scheduled bursts */
+    for(var i=S.pending.length-1;i>=0;i--){
+      if(S.pending[i].at<=now){spawn(S.pending[i].src);S.pending.splice(i,1)}
+    }
+    /* completions + queue drain (FIFO head-of-line: a wide LIST at the head blocks) */
+    LANE_ORDER.forEach(function(k){
+      var L=LANES[k];
+      for(var j=L.ex.length-1;j>=0;j--){
+        if(L.ex[j].endAt<=now){var r=L.ex.splice(j,1)[0];finish(L,r)}
+      }
+      while(L.q.length&&usedSeats(L)+L.q[0].width<=L.cap){
+        var h=L.q.shift(); rmEl(qEls,h.id); exec(L,h);
+      }
+    });
+    /* step-3 observation: one fat LIST holds every seat while narrow PUTs queue */
+    if(CH.step===3&&!CH.done[2]){
+      var W=LANES.wh;
+      var fat=W.ex.some(function(r){return r.width>=3});
+      if(W.cap<=3&&fat&&W.q.length>=3){
+        CH.done[2]=true;CH.step=4;
+        logEv('Info','ChallengeStep','try-this/step-3','One 3-seat LIST = the whole level. Seat width is the hidden cost of LISTs.');
+      }
+    }
+    render();
+  }
+
+  /* ------------------------------------------------------------------ render */
+  function render(){
+    var totE=0,totQ=0,totR=0,subE=[],subQ=[],subR=[];
+    LANE_ORDER.forEach(function(k){
+      var L=LANES[k],E=laneEls[k],u=usedSeats(L);
+      totE+=u;totQ+=L.q.length;totR+=L.rej;
+      var ab=L.name==='workload-high'?'wl-high':L.name==='workload-low'?'wl-low':
+             L.name==='global-default'?'g-def':L.name;
+      subE.push(ab+' '+u);subQ.push(ab+' '+L.q.length);subR.push(ab+' '+L.rej);
+      E.stats.textContent='seats '+u+'/'+L.cap+' · queued '+L.q.length+'/'+L.qlim;
+      E.num.textContent=L.cap;
+      E.minus.disabled=L.cap<=3; E.plus.disabled=L.cap>=10;
+      E.rejN.textContent=L.rej;
+      E.rej.classList.toggle('has',L.rej>0);
+      /* free seat slots */
+      var frees=E.seats.querySelectorAll('.seat.free'),want=Math.max(0,L.cap-u);
+      for(var i=frees.length;i<want;i++){
+        var s=document.createElement('div');s.className='seat free';
+        s.title='free seat';E.seats.appendChild(s);
+      }
+      for(var j=frees.length;j>want;j--)E.seats.removeChild(frees[j-1]);
+    });
+    $('mExec').textContent=totE; $('mExecSub').textContent=subE.join(' · ');
+    $('mQ').textContent=totQ;    $('mQSub').textContent=subQ.join(' · ');
+    $('mRej').textContent=totR;  $('mRejSub').textContent=subR.join(' · ');
+    updateChallenge();
+  }
+
+  /* ------------------------------------------------------------------ controls */
+  $('kubeletTgl').addEventListener('click',function(){
+    S.kubeletOn=!S.kubeletOn;
+    this.classList.toggle('on',S.kubeletOn); this.textContent=S.kubeletOn?'ON':'OFF';
+  });
+  $('tenantsTgl').addEventListener('click',function(){
+    S.tenantsOn=!S.tenantsOn;
+    this.classList.toggle('on',S.tenantsOn); this.textContent=S.tenantsOn?'ON':'OFF';
+  });
+  function setRate(n){
+    S.rate=Math.max(0,Math.min(8,n));
+    $('rate').value=S.rate;
+    $('rateVal').textContent=S.rate+'/s';
+  }
+  $('rate').addEventListener('input',function(){setRate(+this.value)});
+
+  var stormN=0;
+  function fireStorm(){
+    stormN++;
+    var btn=$('stormBtn');btn.disabled=true;
+    setTimeout(function(){btn.disabled=false},1400);
+    for(var i=0;i<10;i++)S.pending.push({at:Date.now()+i*120,src:'rogue'});
+    logEv('Warning','StormFired','user/pat','kubectl get pods -A ×10 in a loop — every one a 3-seat LIST');
+    if(CH.step===2&&S.fsOn){CH.s2stormAt=Date.now();CH.s2ok=0;}
+  }
+  $('stormBtn').addEventListener('click',fireStorm);
+
+  function fireRollout(){
+    var btn=$('rolloutBtn');btn.disabled=true;
+    setTimeout(function(){btn.disabled=false},1400);
+    for(var i=0;i<16;i++)S.pending.push({at:Date.now()+i*60,src:'rollout'});
+    logEv('Normal','RolloutStarted','deployment/nimbus-gateway','16 writes burst from kube-system — workload-high absorbs it');
+  }
+  $('rolloutBtn').addEventListener('click',fireRollout);
+
+  function setFS(on){
+    if(on===S.fsOn)return;
+    S.fsOn=on;
+    var b=$('fsBtn'),m=$('schMine'),c=$('ctrlSch');
+    b.classList.toggle('on',on);
+    b.innerHTML=on?'✓ FlowSchema <code>your-controller</code> → workload-high &nbsp;(click to delete)'
+                  :'＋ Create FlowSchema <code>your-controller</code> → workload-high';
+    m.classList.toggle('absent',!on); m.classList.toggle('present',on);
+    m.dataset.tip=on
+      ?'FlowSchema your-controller — matchingPrecedence 1000: matches sa/platform/nimbus-operator before global-default can. Priority level: workload-high. Click to delete.'
+      :'FlowSchema your-controller — not created yet. Click to create it: matches your controller’s ServiceAccount and routes it to workload-high, out of the shared catch-all.';
+    c.textContent=on?'your-controller':'global-default';
+    c.classList.toggle('hot',on);
+    logEv('Info',on?'FlowSchemaCreated':'FlowSchemaDeleted','flowschema/your-controller',
+      on?'sa/platform/nimbus-operator now classifies to workload-high':'controller falls back to global-default');
+    if(!on&&CH.step===2){CH.s2stormAt=0;CH.s2ok=0;}
+  }
+  $('fsBtn').addEventListener('click',function(){setFS(!S.fsOn)});
+  $('schMine').addEventListener('click',function(){setFS(!S.fsOn)});
+  $('reset').addEventListener('click',function(){location.reload()});
+
+  /* ------------------------------------------------------------------ challenge */
+  var CH_TEXT=[
+    'Step 1 — Keep your controller at rate ≥ 2, then fire the <code>LIST storm</code>. Wide LISTs stuff <code>global-default</code>; your controller lands behind them and eats <code>429</code>s.',
+    'Step 2 — Create the <code>your-controller</code> FlowSchema, fire the storm again. The storm still floods <code>global-default</code> — but your controller keeps executing in <code>workload-high</code>.',
+    'Step 3 — Seat width: drop <code>workload-high</code> seats to 3. Your controller’s periodic relist LIST needs all 3 — watch narrow PUTs queue behind one fat LIST even at a low rate.'
+  ];
+  var SUCCESS='Challenge complete! You saw the whole APF pipeline: a FlowSchema decides <b>which</b> priority level owns a request; the level’s seats decide <b>whether</b> it runs, waits, or gets a 429 — and a LIST pays for several seats at once. In the lab you’ll read these exact <code>apiserver_flowcontrol_*</code> metrics and create the real FlowSchema.';
+  function updateChallenge(){
+    if(CH.step===1&&S.rate<2&&!CH.done[0]){/* text already instructs; no-op */}
+    for(var i=1;i<=3;i++){
+      var d=$('d'+i); d.className='dot'+(CH.done[i-1]?' done':CH.step===i?' cur':'');
+      d.textContent=CH.done[i-1]?'✓':i;
+    }
+    var box=$('challenge'), txt=$('chTxt');
+    if(CH.step===4){box.classList.add('success');txt.innerHTML=SUCCESS;}
+    else txt.innerHTML=CH_TEXT[CH.step-1];
+  }
+
+  /* ------------------------------------------------------------------ boot */
+  logEv('Info','SimulatorReady','apiserver/flowcontrol',
+    '4 priority levels online. Traffic flowing — now overload one.');
+  render();
+  setInterval(tick,100);
+
+  /* test hook (harmless in production) */
+  window.__apf={S:S,LANES:LANES,CH:CH,rejBySrc:rejBySrc,fireStorm:fireStorm,
+    fireRollout:fireRollout,setRate:setRate,setFS:setFS,setCap:setCap,stormActive:stormActive};
+})();
+</script>
+</body>
+</html>
